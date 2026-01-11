@@ -1,0 +1,186 @@
+# dropletter - Project Rules & Documentation
+
+## Project Overview
+自律型AIエージェントを活用したドキュメント処理システム。
+最新のAI技術とフレームワークを組み合わせて、競合と差別化する「武器」と「盾」を実装。
+
+---
+
+## Architecture
+
+### A. 脳・自律エージェント (The Brain)
+思考、法的推論、ツール実行の制御を担当。
+
+**Claude Agent SDK**
+- 自律エージェント動作、Skills定義の核心
+- https://github.com/anthropics/claude-agent-sdk-typescript
+- 公式ドキュメント: https://docs.claude.com/en/api/agent-sdk/overview
+
+**Anthropic API**
+- Claude 3.5 Sonnet/Claude 4の基本仕様
+- https://docs.anthropic.com/en/api/getting-started
+
+**Groq Cloud**
+- Llama 3を爆速で動かすAPI
+- https://console.groq.com/docs/quickstart
+
+### B. 身体・インターフェース (The Body)
+UI構築、ストリーミング表示、AIとの通信を担当。
+
+**Vercel AI SDK**
+- Next.js上でAIの思考プロセスを可視化
+- https://sdk.vercel.ai/docs
+
+**Next.js (App Router)**
+- Server Actions、最新仕様を活用
+- https://nextjs.org/docs
+
+**Shadcn UI**
+- 美しく機能的なUIコンポーネント集
+- https://ui.shadcn.com/docs
+
+**Framer Motion**
+- 吸い込まれるようなアニメーション実装
+- https://www.framer.com/motion/
+
+### C. 特殊能力・防御壁 (The Moat)
+競合との差別化要素。
+
+**LlamaParse**
+- PDFを画像として解析し、構造化データに変換（特許回避）
+- https://docs.cloud.llamaindex.ai/llama_parse/getting_started
+
+**Inngest**
+- 複数ファイルの並列処理・キューイング制御
+- https://www.inngest.com/docs
+
+**Liveblocks**
+- リアルタイムコラボレーション（コメント・同期）
+- https://liveblocks.io/docs
+
+**Microsoft Presidio**
+- 個人情報(PII)の自動検知・マスキング
+- https://microsoft.github.io/presidio/
+
+---
+
+## Coding Guidelines
+
+### TypeScript
+- 厳格な型定義を使用
+- `any` は避け、適切な型を定義する
+- nullish coalescing (`??`) とoptional chaining (`?.`) を活用
+
+### Next.js App Router
+- Server Components をデフォルトとする
+- Client Components は必要最小限に（`"use client"` ディレクティブ）
+- Server Actions を活用してAPIルートを削減
+
+### AI Integration
+- ストリーミングレスポンスを優先
+- エラーハンドリングを確実に実装
+- タイムアウト設定を適切に行う
+
+### UI/UX
+- Shadcn UIコンポーネントを基盤とする
+- Framer Motionでマイクロインタラクションを実装
+- レスポンシブデザインを徹底
+
+### Security & Privacy
+- Presidioを使用してPIIを自動検知
+- 機密情報をログに出力しない
+- 環境変数で認証情報を管理
+
+---
+
+## Development Workflow
+
+1. **機能開発**: Agent SDKのSkillsとして実装
+2. **UI統合**: Vercel AI SDKでストリーミング表示
+3. **並列処理**: Inngestでバックグラウンドジョブ化
+4. **PII対応**: Presidioで自動マスキング
+5. **リアルタイム**: Liveblocksで同期・コラボレーション
+
+---
+
+## Server Startup (必須)
+
+テスト・動作確認を行う前に、以下のサーバーを**必ず全て起動**すること。
+
+### 必須サーバー一覧
+
+| サーバー | ポート | 起動コマンド | 用途 |
+|---------|--------|-------------|------|
+| Next.js | 3000 | `npm run dev` | フロントエンド・API |
+| Inngest Dev | 8288 | `./node_modules/.bin/inngest-cli dev -u http://localhost:3000/api/inngest` | ジョブキュー・バックグラウンド処理 |
+
+### 起動確認コマンド
+
+```bash
+# ポートが使用中か確認
+lsof -i :3000 | grep LISTEN  # Next.js
+lsof -i :8288 | grep LISTEN  # Inngest
+
+# Inngest統合確認
+curl -s http://localhost:3000/api/inngest | grep function_count
+```
+
+### 起動スクリプト（推奨）
+
+開発時は以下のコマンドで両方のサーバーを起動：
+
+```bash
+# ターミナル1: Inngest Dev Server
+cd /Users/takayukiishii/Documents/dropletter
+./node_modules/.bin/inngest-cli dev -u http://localhost:3000/api/inngest
+
+# ターミナル2: Next.js
+cd /Users/takayukiishii/Documents/dropletter
+npm run dev
+```
+
+### 注意事項
+
+- **Inngestが起動していないと**: ファイル処理が「キュー待ち」から進まない、または「fetch failed」エラーが発生
+- **Next.jsが起動していないと**: UI表示不可、API呼び出し失敗（ERR_CONNECTION_REFUSED）
+- **両方必須**: PDF解析パイプライン（visual-parse → pii-masking → fast-check → deep-reason）はInngestで実行される
+
+---
+
+## PDF Rendering (重要)
+
+PDFの表示にはreact-pdf-highlighterを使用する。**iframeベースのPDFビューアは使用しない**。
+
+### 必須設定
+
+```typescript
+const PDFJS_VERSION = "4.4.168"
+const WORKER_SRC = `https://unpkg.com/pdfjs-dist@${PDFJS_VERSION}/build/pdf.worker.min.mjs`
+const CMAP_URL = `https://unpkg.com/pdfjs-dist@${PDFJS_VERSION}/cmaps/`
+
+<PdfLoader
+  url={pdfUrl}
+  workerSrc={WORKER_SRC}
+  cMapUrl={CMAP_URL}      // 日本語テキスト表示に必須
+  cMapPacked={true}
+/>
+```
+
+### テキストが消える場合
+
+1. `cMapUrl`と`cMapPacked={true}`が設定されているか確認
+2. pdfjs-distのバージョンがreact-pdf-highlighterと一致しているか確認（4.4.168）
+3. 詳細は `.claude/skills/pdf-rendering/SKILL.md` を参照
+
+---
+
+## File Structure (推奨)
+```
+/app
+  /api          # API routes (最小限)
+  /components   # Shadcn UI + カスタムコンポーネント
+  /agents       # Claude Agent SDK Skills
+  /lib          # ユーティリティ、helpers
+/public         # 静的アセット
+```
+
