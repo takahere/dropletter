@@ -45,3 +45,4 @@ venv/
 # Test files
 *.pdf
 /tmp/
+vercel-import.env
