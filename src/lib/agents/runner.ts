@@ -2,7 +2,6 @@ import Anthropic from "@anthropic-ai/sdk"
 import Groq from "groq-sdk"
 import * as pdfjs from "pdfjs-dist"
 import { readFile } from "fs/promises"
-import FormData from "form-data"
 
 // Agent types
 export type AgentType = "fast-check" | "deep-reason" | "visual-parse" | "pii-masking"
@@ -341,11 +340,11 @@ export async function runVisualParse(
 
     // Step 1: Upload the PDF file
     const fileBuffer = await readFile(filePath)
+
+    // Use Web standard FormData and Blob for Vercel compatibility
+    const blob = new Blob([fileBuffer], { type: "application/pdf" })
     const formData = new FormData()
-    formData.append("file", fileBuffer, {
-      filename: "document.pdf",
-      contentType: "application/pdf",
-    })
+    formData.append("file", blob, "document.pdf")
     formData.append("language", language)
 
     console.log("[VisualParse] Uploading file to LlamaParse API...")
@@ -354,9 +353,8 @@ export async function runVisualParse(
       method: "POST",
       headers: {
         Authorization: `Bearer ${apiKey}`,
-        ...formData.getHeaders(),
       },
-      body: formData as unknown as BodyInit,
+      body: formData,
     })
 
     if (!uploadResponse.ok) {
