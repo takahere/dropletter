@@ -1,10 +1,21 @@
 "use client"
 
+import { useState } from "react"
+import { ChevronDown, ChevronUp, MessageCircle } from "lucide-react"
 import { cn } from "@/lib/utils"
+import { CommentInput } from "./comment-input"
+import { CommentList } from "./comment-list"
 import type { ProblemHighlight, Severity, HighlightType } from "@/types/highlights"
+import type { HighlightComment } from "@/types/comments"
 
 interface HighlightPopupProps {
   highlight: ProblemHighlight
+  comments?: HighlightComment[]
+  currentUserId?: string
+  onAddComment?: (content: string) => Promise<boolean>
+  onUpdateComment?: (commentId: string, content: string) => Promise<boolean>
+  onDeleteComment?: (commentId: string) => Promise<boolean>
+  onResolveComment?: (commentId: string, isResolved: boolean) => Promise<boolean>
   className?: string
 }
 
@@ -49,24 +60,33 @@ const typeConfig: Record<HighlightType, { label: string; color: string }> = {
   },
 }
 
-export function HighlightPopup({ highlight, className }: HighlightPopupProps) {
+export function HighlightPopup({
+  highlight,
+  comments = [],
+  currentUserId,
+  onAddComment,
+  onUpdateComment,
+  onDeleteComment,
+  onResolveComment,
+  className,
+}: HighlightPopupProps) {
+  const [isCommentsOpen, setIsCommentsOpen] = useState(false)
   const severity = severityConfig[highlight.comment.severity]
   const typeInfo = typeConfig[highlight.type]
+
+  const commentCount = comments.length
 
   return (
     <div
       className={cn(
-        "max-w-xs p-4 bg-white dark:bg-slate-800 rounded-xl shadow-2xl",
+        "max-w-sm p-4 bg-white dark:bg-slate-800 rounded-xl shadow-2xl",
         "border border-slate-200 dark:border-slate-700",
         "animate-in fade-in-0 zoom-in-95 duration-200",
         className
       )}
     >
-      {/* ヘッダー: 絵文字 + タイプ + 重大度 */}
+      {/* ヘッダー: タイプ + 重大度 */}
       <div className="flex items-center gap-2 mb-3">
-        <span className="text-2xl" role="img" aria-label="icon">
-          {highlight.comment.emoji}
-        </span>
         <span className={cn("text-sm font-medium", typeInfo.color)}>
           {typeInfo.label}
         </span>
@@ -120,6 +140,51 @@ export function HighlightPopup({ highlight, className }: HighlightPopupProps) {
           <p className="text-sm text-green-700 dark:text-green-300 bg-green-50 dark:bg-green-900/20 p-2 rounded-lg">
             {highlight.comment.suggestedFix}
           </p>
+        </div>
+      )}
+
+      {/* コメントセクション */}
+      {onAddComment && (
+        <div className="pt-3 mt-3 border-t border-slate-200 dark:border-slate-700">
+          {/* コメントヘッダー（トグル） */}
+          <button
+            onClick={() => setIsCommentsOpen(!isCommentsOpen)}
+            className="w-full flex items-center justify-between text-left hover:bg-slate-50 dark:hover:bg-slate-700/50 -mx-2 px-2 py-1.5 rounded-lg transition-colors"
+          >
+            <div className="flex items-center gap-2">
+              <MessageCircle className="w-4 h-4 text-slate-500" />
+              <span className="text-sm font-medium text-slate-700 dark:text-slate-300">
+                コメント
+              </span>
+              {commentCount > 0 && (
+                <span className="px-1.5 py-0.5 text-xs font-medium bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 rounded-full">
+                  {commentCount}
+                </span>
+              )}
+            </div>
+            {isCommentsOpen ? (
+              <ChevronUp className="w-4 h-4 text-slate-400" />
+            ) : (
+              <ChevronDown className="w-4 h-4 text-slate-400" />
+            )}
+          </button>
+
+          {/* コメント一覧 + 入力 */}
+          {isCommentsOpen && (
+            <div className="mt-3 space-y-3">
+              <CommentList
+                comments={comments}
+                currentUserId={currentUserId}
+                onUpdate={onUpdateComment || (() => Promise.resolve(false))}
+                onDelete={onDeleteComment || (() => Promise.resolve(false))}
+                onResolve={onResolveComment || (() => Promise.resolve(false))}
+              />
+              <CommentInput
+                onSubmit={onAddComment}
+                placeholder="コメントを追加..."
+              />
+            </div>
+          )}
         </div>
       )}
     </div>

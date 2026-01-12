@@ -1,17 +1,23 @@
 import { inngest } from "../client"
 import { runDocumentPipeline } from "@/lib/agents/runner"
-import { createServerClient } from "@supabase/ssr"
+import { createClient } from "@supabase/supabase-js"
 
-// Supabaseクライアント（サーバーサイド用、cookieなし）
+// Supabaseクライアント（Service Role - RLSバイパス）
 function createSupabaseAdmin() {
-  return createServerClient(
+  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY
+
+  if (!serviceRoleKey) {
+    console.warn("[Inngest] SUPABASE_SERVICE_ROLE_KEY is not set, using anon key")
+  }
+
+  return createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    serviceRoleKey || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     {
-      cookies: {
-        getAll: () => [],
-        setAll: () => {},
-      },
+      auth: {
+        autoRefreshToken: false,
+        persistSession: false
+      }
     }
   )
 }

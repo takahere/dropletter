@@ -19,6 +19,9 @@ export async function POST(req: NextRequest) {
 
     const supabase = await createClient()
 
+    // Get current user (optional - reports can be created without auth)
+    const { data: { user } } = await supabase.auth.getUser()
+
     const { data, error } = await supabase
       .from("reports")
       .insert({
@@ -26,6 +29,7 @@ export async function POST(req: NextRequest) {
         file_path: filePath,
         result_json: resultJson,
         status: "completed",
+        user_id: user?.id || null, // Associate with user if logged in
       })
       .select("id")
       .single()

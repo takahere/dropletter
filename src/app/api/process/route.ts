@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import { inngest } from "@/../../inngest/client"
-import { createClient } from "@/lib/supabase/server"
+import { createServiceClient, createClient } from "@/lib/supabase/server"
 
 export const maxDuration = 30
 
@@ -19,8 +19,12 @@ export async function POST(req: NextRequest) {
       )
     }
 
-    // Supabaseにレポートレコードを作成（pending状態）
-    const supabase = await createClient()
+    // ユーザー情報を取得（ログイン中の場合）
+    const userClient = await createClient()
+    const { data: { user } } = await userClient.auth.getUser()
+
+    // Service Roleクライアントでレポートを作成（RLSバイパス）
+    const supabase = createServiceClient()
     const { data: report, error: insertError } = await supabase
       .from("reports")
       .insert({
@@ -31,6 +35,7 @@ export async function POST(req: NextRequest) {
         processing_status: "pending",
         progress: 0,
         result_json: {},
+        user_id: user?.id || null, // ログイン中ならユーザーIDを関連付け
       })
       .select("id")
       .single()

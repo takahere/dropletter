@@ -1,6 +1,7 @@
 import { Metadata } from "next"
 import { createClient } from "@/lib/supabase/server"
 import { ReportView } from "@/components/report-view"
+import { Footer } from "@/components/footer"
 import { notFound } from "next/navigation"
 import Link from "next/link"
 
@@ -84,6 +85,9 @@ export default async function SharePage({ params }: Props) {
       <div className="max-w-4xl mx-auto px-6 py-8">
         <ReportView report={report} editable={true} />
       </div>
+
+      {/* フッター */}
+      <Footer />
     </main>
   )
 }

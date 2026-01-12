@@ -1,0 +1,76 @@
+{
+  "guidelines": [
+    {
+      "id": "shinsho",
+      "name": "信書の定義",
+      "authority": "総務省",
+      "url": "https://www.soumu.go.jp/yusei/shinsho_guide.html",
+      "statute": "郵便法第4条",
+      "description": "信書に該当する/しない文書の判断基準",
+      "keywords": ["信書", "郵便法", "特定の受取人", "意思表示", "通知"]
+    },
+    {
+      "id": "tokushoho",
+      "name": "特定商取引法",
+      "authority": "消費者庁",
+      "url": "https://www.no-trouble.caa.go.jp/",
+      "statute": "特定商取引法",
+      "description": "通信販売・訪問販売等に関する規制",
+      "keywords": ["通信販売", "訪問販売", "クーリングオフ", "返品", "解約", "広告", "勧誘"]
+    },
+    {
+      "id": "keihinhyo",
+      "name": "景品表示法",
+      "authority": "消費者庁",
+      "url": "https://www.caa.go.jp/policies/policy/representation/fair_labeling/",
+      "statute": "景品表示法",
+      "description": "不当表示・誇大広告の禁止",
+      "keywords": ["優良誤認", "有利誤認", "誇大広告", "不当表示", "最安", "No.1", "期間限定"]
+    },
+    {
+      "id": "kojinjouhou",
+      "name": "個人情報保護法",
+      "authority": "個人情報保護委員会",
+      "url": "https://www.ppc.go.jp/personalinfo/",
+      "statute": "個人情報保護法",
+      "description": "個人情報の適正な取扱いに関する規制",
+      "keywords": ["個人情報", "個人データ", "要配慮個人情報", "オプトアウト", "同意", "第三者提供"]
+    },
+    {
+      "id": "yakujihou",
+      "name": "医薬品医療機器等法（薬機法）",
+      "authority": "厚生労働省",
+      "url": "https://www.mhlw.go.jp/stf/seisakunitsuite/bunya/kenkou_iryou/iyakuhin/koukokukisei/index.html",
+      "statute": "医薬品医療機器等法第66条",
+      "description": "医薬品等の広告規制",
+      "keywords": ["効能", "効果", "治る", "治療", "健康食品", "サプリメント", "医薬品"]
+    },
+    {
+      "id": "shakkintorisoku",
+      "name": "貸金業法・利息制限法",
+      "authority": "金融庁",
+      "url": "https://www.fsa.go.jp/policy/kashikin/index.html",
+      "statute": "貸金業法・利息制限法",
+      "description": "貸金業の規制と金利上限",
+      "keywords": ["金利", "利息", "貸付", "ローン", "借入", "キャッシング"]
+    },
+    {
+      "id": "chosakuken",
+      "name": "著作権法",
+      "authority": "文化庁",
+      "url": "https://www.bunka.go.jp/seisaku/chosakuken/",
+      "statute": "著作権法",
+      "description": "著作物の保護と利用に関する規制",
+      "keywords": ["著作権", "コピー", "転載", "引用", "二次利用"]
+    },
+    {
+      "id": "shohishahou",
+      "name": "消費者契約法",
+      "authority": "消費者庁",
+      "url": "https://www.caa.go.jp/policies/policy/consumer_system/consumer_contract_act/",
+      "statute": "消費者契約法",
+      "description": "不当な契約条項の無効化",
+      "keywords": ["契約", "解約", "キャンセル", "違約金", "免責", "責任制限"]
+    }
+  ]
+}

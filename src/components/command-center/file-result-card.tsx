@@ -2,6 +2,7 @@
 
 import { useState, useEffect, forwardRef } from "react"
 import dynamic from "next/dynamic"
+import Link from "next/link"
 import {
   FileText,
   Loader2,
@@ -10,15 +11,21 @@ import {
   ChevronRight,
   XCircle,
   RefreshCw,
+  BookOpen,
+  ExternalLink,
+  FileCheck,
+  Share2,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { Progress } from "@/components/ui/progress"
 import { calculateScore, getScoreColor, getScoreBgColor } from "@/lib/utils/score"
 import type { FileState } from "@/lib/stores/file-store"
+import { inferGuidelineFromIssueType } from "@/lib/legal-guidelines"
+import { ClearReportDialog } from "@/components/clear-report-dialog"
 
-// PdfHighlighterViewer を動的インポート（SSR無効）- react-pdf-highlighter の問題箇所表示機能付き
-const PdfHighlighterViewer = dynamic(
-  () => import("./pdf-highlighter-viewer").then((mod) => mod.PdfHighlighterViewer),
+// PdfViewerWithComments を動的インポート（SSR無効）- Liveblocksリアルタイムコメント機能付き
+const PdfViewerWithComments = dynamic(
+  () => import("./pdf-viewer-with-comments").then((mod) => mod.PdfViewerWithComments),
   {
     ssr: false,
     loading: () => (
@@ -106,6 +113,7 @@ export const FileResultCard = forwardRef<HTMLDivElement, FileResultCardProps>(
       ngWords: true,
       legalJudgment: true,
     })
+    const [showClearReport, setShowClearReport] = useState(false)
 
     const isProcessing =
       file.processingStatus !== "idle" &&
@@ -218,6 +226,27 @@ export const FileResultCard = forwardRef<HTMLDivElement, FileResultCardProps>(
                 >
                   {score}点
                 </span>
+                {/* 共有ボタン */}
+                {file.reportId && (
+                  <Link
+                    href={`/share/${file.reportId}`}
+                    target="_blank"
+                    className="flex items-center gap-1.5 px-3 py-1.5 text-sm bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-300 hover:bg-green-100 dark:hover:bg-green-900/30 rounded-lg transition-colors"
+                    title="共有ページを開く"
+                  >
+                    <Share2 className="w-4 h-4" />
+                    <span className="hidden sm:inline">共有</span>
+                  </Link>
+                )}
+                {/* クリアレポートボタン */}
+                <button
+                  onClick={() => setShowClearReport(true)}
+                  className="flex items-center gap-1.5 px-3 py-1.5 text-sm bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-300 hover:bg-blue-100 dark:hover:bg-blue-900/30 rounded-lg transition-colors"
+                  title="法的クリアレポートを生成"
+                >
+                  <FileCheck className="w-4 h-4" />
+                  <span className="hidden sm:inline">レポート</span>
+                </button>
               </div>
             )}
 
@@ -308,7 +337,7 @@ export const FileResultCard = forwardRef<HTMLDivElement, FileResultCardProps>(
                         ngWords: problems.ngWords,
                       })
                       return (
-                        <PdfHighlighterViewer
+                        <PdfViewerWithComments
                           reportId={file.reportId}
                           problems={problems}
                           serverHighlights={report?.result_json?.highlights}
@@ -415,6 +444,57 @@ export const FileResultCard = forwardRef<HTMLDivElement, FileResultCardProps>(
                         {report.result_json.deepReason.summary}
                       </p>
                     )}
+
+                    {/* 法的問題の詳細とガイドラインリンク */}
+                    {report.result_json.deepReason.legalJudgment.issues &&
+                      report.result_json.deepReason.legalJudgment.issues.length > 0 && (
+                      <div className="mt-4 space-y-3">
+                        <div className="flex items-center gap-2 text-sm font-medium text-slate-700 dark:text-slate-300">
+                          <BookOpen className="w-4 h-4" />
+                          <span>検出された法的問題</span>
+                        </div>
+                        {report.result_json.deepReason.legalJudgment.issues.map((issue, index) => {
+                          const guideline = inferGuidelineFromIssueType(issue.type)
+                          return (
+                            <div
+                              key={index}
+                              className="p-3 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg"
+                            >
+                              <div className="flex items-start justify-between gap-2">
+                                <div className="flex-1">
+                                  <p className="font-medium text-amber-800 dark:text-amber-300">
+                                    {issue.type}
+                                  </p>
+                                  <p className="text-sm text-amber-700 dark:text-amber-400 mt-1">
+                                    {issue.description}
+                                  </p>
+                                  {issue.suggestedFix && (
+                                    <p className="text-sm text-green-700 dark:text-green-400 mt-2 bg-green-50 dark:bg-green-900/20 p-2 rounded">
+                                      修正案: {issue.suggestedFix}
+                                    </p>
+                                  )}
+                                </div>
+                              </div>
+                              {/* ガイドラインリンク */}
+                              {guideline && (
+                                <a
+                                  href={guideline.url}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="mt-3 flex items-center gap-2 px-3 py-2 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg text-sm text-blue-700 dark:text-blue-300 hover:bg-blue-100 dark:hover:bg-blue-900/30 transition-colors"
+                                >
+                                  <BookOpen className="w-4 h-4 flex-shrink-0" />
+                                  <span className="flex-1">
+                                    公式ガイドラインを確認（{guideline.authority}）
+                                  </span>
+                                  <ExternalLink className="w-4 h-4 flex-shrink-0" />
+                                </a>
+                              )}
+                            </div>
+                          )
+                        })}
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
@@ -430,6 +510,16 @@ export const FileResultCard = forwardRef<HTMLDivElement, FileResultCardProps>(
               処理が開始されるのを待っています
             </p>
           </div>
+        )}
+
+        {/* クリアレポートダイアログ */}
+        {file.reportId && (
+          <ClearReportDialog
+            reportId={file.reportId}
+            fileName={file.fileName}
+            isOpen={showClearReport}
+            onClose={() => setShowClearReport(false)}
+          />
         )}
       </div>
     )

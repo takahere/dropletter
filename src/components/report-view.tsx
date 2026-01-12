@@ -111,6 +111,7 @@ export function ReportView({ report, editable = false }: ReportViewProps) {
     result.deepReason?.summary || ""
   )
   const [humanEdits, setHumanEdits] = useState<HumanEdit[]>(report.human_edits || [])
+  const [isCopied, setIsCopied] = useState(false)
 
   const toggleSection = (section: string) => {
     setExpandedSections((prev) => ({ ...prev, [section]: !prev[section] }))
@@ -207,9 +208,33 @@ export function ReportView({ report, editable = false }: ReportViewProps) {
   }
 
   // 共有URLをコピー
-  const copyShareUrl = () => {
+  const copyShareUrl = async () => {
     const url = window.location.href
-    navigator.clipboard.writeText(url)
+    try {
+      await navigator.clipboard.writeText(url)
+      setIsCopied(true)
+      setTimeout(() => setIsCopied(false), 2000)
+    } catch (err) {
+      console.error("Failed to copy URL:", err)
+      // フォールバック: テキスト選択を使用
+      try {
+        const textArea = document.createElement("textarea")
+        textArea.value = url
+        textArea.style.position = "fixed"
+        textArea.style.left = "-9999px"
+        document.body.appendChild(textArea)
+        textArea.focus()
+        textArea.select()
+        document.execCommand("copy")
+        document.body.removeChild(textArea)
+        setIsCopied(true)
+        setTimeout(() => setIsCopied(false), 2000)
+      } catch (fallbackErr) {
+        console.error("Fallback copy failed:", fallbackErr)
+        // 最終フォールバック: URLを表示
+        window.prompt("URLをコピーしてください:", url)
+      }
+    }
   }
 
   // セクションヘッダーコンポーネント
@@ -295,10 +320,24 @@ export function ReportView({ report, editable = false }: ReportViewProps) {
           <div className="flex items-center gap-2">
             <button
               onClick={copyShareUrl}
-              className="flex items-center gap-2 px-3 py-2 text-sm bg-muted hover:bg-muted/80 rounded-lg transition-colors"
+              className={cn(
+                "flex items-center gap-2 px-3 py-2 text-sm rounded-lg transition-colors",
+                isCopied
+                  ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400"
+                  : "bg-muted hover:bg-muted/80"
+              )}
             >
-              <Share2 className="w-4 h-4" />
-              共有
+              {isCopied ? (
+                <>
+                  <Check className="w-4 h-4" />
+                  コピーしました
+                </>
+              ) : (
+                <>
+                  <Share2 className="w-4 h-4" />
+                  共有
+                </>
+              )}
             </button>
 
             {editable && (

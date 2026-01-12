@@ -47,6 +47,9 @@ export async function POST(req: NextRequest) {
       "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
       "text/plain",
       "text/markdown",
+      "image/png",
+      "image/jpeg",
+      "image/jpg",
     ]
 
     if (!allowedTypes.includes(file.type)) {

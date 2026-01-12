@@ -5,7 +5,11 @@ import { Sparkles, Trash2 } from "lucide-react"
 import { UploadZone } from "@/components/command-center/upload-zone"
 import { FileSidebar } from "@/components/command-center/file-sidebar"
 import { FileResultCard } from "@/components/command-center/file-result-card"
+import { GlobalDropZone } from "@/components/global-drop-zone"
+import { UserProfile } from "@/components/user-profile"
+import { Footer } from "@/components/footer"
 import { useProcessingStatus } from "@/hooks/use-processing-status"
+import { useFileUpload } from "@/hooks/use-file-upload"
 import { useFileStore } from "@/lib/stores/file-store"
 
 export default function Home() {
@@ -17,6 +21,9 @@ export default function Home() {
 
   // 処理中ファイルのステータスをポーリング
   useProcessingStatus()
+
+  // ファイルアップロードフック（GlobalDropZone用）
+  const { handleFiles } = useFileUpload()
 
   const files = useFileStore((state) => state.files)
   const clearCompleted = useFileStore((state) => state.clearCompleted)
@@ -57,6 +64,7 @@ export default function Home() {
                 <p className="text-xs text-muted-foreground">Command Center</p>
               </div>
             </div>
+            <UserProfile />
           </div>
         </header>
         <div className="flex items-center justify-center h-[60vh]">
@@ -70,6 +78,8 @@ export default function Home() {
   if (files.length === 0) {
     return (
       <main className="min-h-screen bg-gradient-to-b from-background to-muted/30">
+        {/* フルスクリーンドロップゾーン */}
+        <GlobalDropZone onFilesDropped={handleFiles} />
         {/* Header */}
         <header className="border-b bg-background/80 backdrop-blur-sm sticky top-0 z-50">
           <div className="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between">
@@ -82,6 +92,7 @@ export default function Home() {
                 <p className="text-xs text-muted-foreground">Command Center</p>
               </div>
             </div>
+            <UserProfile />
           </div>
         </header>
 
@@ -123,6 +134,9 @@ export default function Home() {
             ))}
           </div>
         </div>
+
+        {/* フッター */}
+        <Footer />
       </main>
     )
   }
@@ -130,6 +144,9 @@ export default function Home() {
   // ファイルがある場合はサイドバー + メインコンテンツ
   return (
     <main className="h-screen bg-gradient-to-b from-background to-muted/30 flex flex-col overflow-hidden">
+      {/* フルスクリーンドロップゾーン */}
+      <GlobalDropZone onFilesDropped={handleFiles} />
+
       {/* Header */}
       <header className="border-b bg-background/80 backdrop-blur-sm flex-shrink-0 z-50">
         <div className="px-6 py-4 flex items-center justify-between">
@@ -163,6 +180,9 @@ export default function Home() {
                 完了済みを削除
               </button>
             )}
+
+            {/* ユーザープロファイル */}
+            <UserProfile />
           </div>
         </div>
       </header>

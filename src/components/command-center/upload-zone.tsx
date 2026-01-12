@@ -149,18 +149,23 @@ export function UploadZone({ compact = false }: UploadZoneProps) {
       setIsUploading(true)
       const fileArray = Array.from(files)
 
-      // バリデーション - PDFのみにシンプル化
+      // バリデーション - PDF、PNG、JPEGをサポート
       const validFiles = fileArray.filter((file) => {
         const isValid = file.type === "application/pdf" ||
                        file.name.endsWith(".pdf") ||
-                       file.type.includes("pdf")
+                       file.type.includes("pdf") ||
+                       file.type === "image/png" ||
+                       file.type === "image/jpeg" ||
+                       file.name.endsWith(".png") ||
+                       file.name.endsWith(".jpg") ||
+                       file.name.endsWith(".jpeg")
         console.log("[UploadZone] File:", file.name, "Type:", file.type, "Valid:", isValid)
         return isValid
       })
 
       if (validFiles.length === 0) {
         console.log("[UploadZone] No valid files")
-        alert("PDFファイルを選択してください")
+        alert("PDF、PNG、JPEGファイルを選択してください")
         setIsUploading(false)
         return
       }
@@ -225,7 +230,7 @@ export function UploadZone({ compact = false }: UploadZoneProps) {
           ref={fileInputRef}
           type="file"
           multiple
-          accept=".pdf"
+          accept=".pdf,.png,.jpg,.jpeg"
           onChange={handleInputChange}
           style={{ display: "none" }}
         />
@@ -262,7 +267,7 @@ export function UploadZone({ compact = false }: UploadZoneProps) {
         ref={fileInputRef}
         type="file"
         multiple
-        accept=".pdf"
+        accept=".pdf,.png,.jpg,.jpeg"
         onChange={handleInputChange}
         style={{ display: "none" }}
       />
@@ -290,7 +295,7 @@ export function UploadZone({ compact = false }: UploadZoneProps) {
             {isDragging ? "ここにドロップ!" : "ファイルをドロップ"}
           </h3>
           <p className="text-sm text-muted-foreground">
-            クリックまたはドラッグ＆ドロップでPDFを選択
+            クリックまたはドラッグ＆ドロップでファイルを選択（PDF/PNG/JPEG）
           </p>
         </div>
         {isUploading && (
