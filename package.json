@@ -25,7 +25,6 @@
     "framer-motion": "^11.15.0",
     "groq-sdk": "^0.9.1",
     "inngest": "^3.29.0",
-    "llamaindex": "^0.8.0",
     "lucide-react": "^0.469.0",
     "next": "14.2.21",
     "pdfjs-dist": "^4.4.168",

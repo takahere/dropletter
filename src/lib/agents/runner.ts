@@ -1,8 +1,8 @@
 import Anthropic from "@anthropic-ai/sdk"
 import Groq from "groq-sdk"
-import { LlamaParseReader } from "llamaindex"
 import * as pdfjs from "pdfjs-dist"
 import { readFile } from "fs/promises"
+import FormData from "form-data"
 
 // Agent types
 export type AgentType = "fast-check" | "deep-reason" | "visual-parse" | "pii-masking"
@@ -289,11 +289,39 @@ ${JSON.stringify(fastCheckResult.ngWords, null, 2)}
 }
 
 // ============================================
-// Visual Parse - LlamaParse による PDF解析
+// Visual Parse - LlamaParse REST API による PDF解析
 // ============================================
 
+const LLAMAPARSE_API_BASE = "https://api.cloud.llamaindex.ai/api/v1/parsing"
+
+interface LlamaParseJobResponse {
+  id: string
+  status: string
+}
+
+interface LlamaParseStatusResponse {
+  id: string
+  status: "PENDING" | "SUCCESS" | "ERROR" | "PARTIAL_SUCCESS"
+  num_pages?: number
+}
+
+interface LlamaParseResultResponse {
+  markdown: string
+  metadata?: {
+    title?: string
+    author?: string
+  }
+}
+
 /**
- * Run the visual-parse agent using LlamaParse
+ * Sleep for specified milliseconds
+ */
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms))
+}
+
+/**
+ * Run the visual-parse agent using LlamaParse REST API
  * Converts PDF to structured markdown
  */
 export async function runVisualParse(
@@ -309,44 +337,109 @@ export async function runVisualParse(
       throw new Error("LLAMA_CLOUD_API_KEY is not set")
     }
 
-    const reader = new LlamaParseReader({
-      apiKey,
-      resultType: "markdown",
-      language,
-    })
-
     console.log("[VisualParse] Loading file:", filePath)
 
-    const documents = await reader.loadData(filePath)
+    // Step 1: Upload the PDF file
+    const fileBuffer = await readFile(filePath)
+    const formData = new FormData()
+    formData.append("file", fileBuffer, {
+      filename: "document.pdf",
+      contentType: "application/pdf",
+    })
+    formData.append("language", language)
 
-    console.log("[VisualParse] Documents loaded:", documents.length)
+    console.log("[VisualParse] Uploading file to LlamaParse API...")
 
-    // Combine all pages into markdown
-    const markdownParts: string[] = []
-    const pages: VisualParseResult["pages"] = []
+    const uploadResponse = await fetch(`${LLAMAPARSE_API_BASE}/upload`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        ...formData.getHeaders(),
+      },
+      body: formData as unknown as BodyInit,
+    })
 
-    for (let i = 0; i < documents.length; i++) {
-      const doc = documents[i]
-      const pageContent = doc.text
-
-      markdownParts.push(pageContent)
-
-      pages.push({
-        pageNumber: i + 1,
-        content: pageContent,
-        images: doc.metadata?.images ?? undefined,
-        tables: doc.metadata?.tables ?? undefined,
-      })
+    if (!uploadResponse.ok) {
+      const errorText = await uploadResponse.text()
+      throw new Error(`LlamaParse upload failed: ${uploadResponse.status} - ${errorText}`)
     }
 
-    const fullMarkdown = markdownParts.join("\n\n---\n\n")
+    const uploadResult = (await uploadResponse.json()) as LlamaParseJobResponse
+    const jobId = uploadResult.id
+
+    console.log("[VisualParse] Job created:", jobId)
+
+    // Step 2: Poll for job completion
+    let status: LlamaParseStatusResponse["status"] = "PENDING"
+    let statusResult: LlamaParseStatusResponse | null = null
+    const maxAttempts = 60 // 5 minutes max (5s * 60)
+    let attempts = 0
+
+    while (status === "PENDING" && attempts < maxAttempts) {
+      await sleep(5000) // Wait 5 seconds between polls
+      attempts++
+
+      const statusResponse = await fetch(`${LLAMAPARSE_API_BASE}/job/${jobId}`, {
+        method: "GET",
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+          Accept: "application/json",
+        },
+      })
+
+      if (!statusResponse.ok) {
+        throw new Error(`LlamaParse status check failed: ${statusResponse.status}`)
+      }
+
+      statusResult = (await statusResponse.json()) as LlamaParseStatusResponse
+      status = statusResult.status
+
+      console.log(`[VisualParse] Job status: ${status} (attempt ${attempts}/${maxAttempts})`)
+    }
+
+    if (status !== "SUCCESS" && status !== "PARTIAL_SUCCESS") {
+      throw new Error(`LlamaParse job failed with status: ${status}`)
+    }
+
+    // Step 3: Get the markdown result
+    const resultResponse = await fetch(`${LLAMAPARSE_API_BASE}/job/${jobId}/result/markdown`, {
+      method: "GET",
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        Accept: "application/json",
+      },
+    })
+
+    if (!resultResponse.ok) {
+      throw new Error(`LlamaParse result fetch failed: ${resultResponse.status}`)
+    }
+
+    const resultData = (await resultResponse.json()) as LlamaParseResultResponse
+    const markdown = resultData.markdown
+
+    console.log("[VisualParse] Markdown retrieved, length:", markdown.length)
+
+    // Parse pages (LlamaParse returns single markdown, split by page markers if present)
+    const pageMarker = /---\s*Page\s+\d+\s*---/gi
+    const pageParts = markdown.split(pageMarker).filter((p) => p.trim())
+    const pageCount = statusResult?.num_pages || pageParts.length || 1
+
+    const pages: VisualParseResult["pages"] = pageParts.length > 0
+      ? pageParts.map((content, i) => ({
+          pageNumber: i + 1,
+          content: content.trim(),
+        }))
+      : [{
+          pageNumber: 1,
+          content: markdown,
+        }]
 
     return {
-      markdown: fullMarkdown,
+      markdown,
       metadata: {
-        pageCount: documents.length,
-        title: documents[0]?.metadata?.title,
-        author: documents[0]?.metadata?.author,
+        pageCount,
+        title: resultData.metadata?.title,
+        author: resultData.metadata?.author,
       },
       pages,
     }
@@ -533,9 +626,13 @@ export async function runPdfHighlight(
       const textContent = await page.getTextContent()
 
       const items = textContent.items
-        .filter((item): item is { str: string; transform: number[]; width: number; height: number } =>
-          "str" in item
-        )
+        .filter((item) => "str" in item)
+        .map((item) => ({
+          str: (item as { str: string }).str,
+          transform: (item as { transform: number[] }).transform,
+          width: (item as { width: number }).width,
+          height: (item as { height: number }).height,
+        }))
 
       const fullText = items.map((item) => item.str).join("")
       const normalizedFullText = normalizeText(fullText)
