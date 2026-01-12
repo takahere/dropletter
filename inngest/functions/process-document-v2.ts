@@ -1,6 +1,9 @@
 import { inngest } from "../client"
 import { runDocumentPipeline } from "@/lib/agents/runner"
 import { createClient } from "@supabase/supabase-js"
+import { writeFile, mkdir, unlink } from "fs/promises"
+import { tmpdir } from "os"
+import path from "path"
 
 // Supabaseクライアント（Service Role - RLSバイパス）
 function createSupabaseAdmin() {
@@ -20,6 +23,50 @@ function createSupabaseAdmin() {
       }
     }
   )
+}
+
+// Supabase Storageからファイルをダウンロードしてローカルに保存
+async function downloadFileFromStorage(storagePath: string): Promise<string> {
+  const supabase = createSupabaseAdmin()
+
+  // storagePath形式: "uploads/uuid.pdf" -> bucket="uploads", path="uuid.pdf"
+  const [bucket, ...pathParts] = storagePath.split("/")
+  const filePath = pathParts.join("/")
+
+  console.log(`[Inngest] Downloading from storage: bucket=${bucket}, path=${filePath}`)
+
+  const { data, error } = await supabase.storage
+    .from(bucket)
+    .download(filePath)
+
+  if (error) {
+    throw new Error(`Storage download failed: ${error.message}`)
+  }
+
+  if (!data) {
+    throw new Error("Storage download returned no data")
+  }
+
+  // 一時ディレクトリに保存
+  const uploadDir = path.join(tmpdir(), "dropletter-processing")
+  await mkdir(uploadDir, { recursive: true })
+
+  const localPath = path.join(uploadDir, filePath)
+  const buffer = Buffer.from(await data.arrayBuffer())
+  await writeFile(localPath, buffer)
+
+  console.log(`[Inngest] File downloaded to: ${localPath}`)
+  return localPath
+}
+
+// 一時ファイルを削除
+async function cleanupTempFile(localPath: string): Promise<void> {
+  try {
+    await unlink(localPath)
+    console.log(`[Inngest] Cleaned up temp file: ${localPath}`)
+  } catch (error) {
+    console.warn(`[Inngest] Failed to cleanup temp file: ${localPath}`, error)
+  }
 }
 
 // 進捗状態を更新するヘルパー
@@ -103,11 +150,25 @@ export const processDocumentV2 = inngest.createFunction(
   async ({ event, step }) => {
     const { fileId, filePath, fileName, reportId } = event.data as DocumentProcessEventData
 
-    // Step 1: 処理開始
-    await step.run("start-processing", async () => {
+    // Step 1: 処理開始 & ファイルダウンロード
+    const downloadResult = await step.run("start-processing", async () => {
       await updateProgress(reportId, "parsing", 10)
-      return { status: "started" }
+
+      // Supabase Storageからファイルをダウンロード
+      // filePath形式: "uploads/uuid.pdf" (新形式) or "/tmp/..." (旧形式)
+      let localFilePath: string
+      if (filePath.startsWith("uploads/") || filePath.startsWith("documents/")) {
+        // Supabase Storage形式
+        localFilePath = await downloadFileFromStorage(filePath)
+      } else {
+        // 旧形式（ローカルパス）- 互換性のため
+        localFilePath = filePath
+      }
+
+      return { status: "started", localFilePath }
     })
+
+    const localFilePath = downloadResult.localFilePath
 
     // Step 2: ドキュメントパイプライン実行
     const pipelineResult = await step.run("run-pipeline", async () => {
@@ -131,7 +192,7 @@ export const processDocumentV2 = inngest.createFunction(
       }
 
       try {
-        const result = await runDocumentPipeline(filePath, onStatusChange)
+        const result = await runDocumentPipeline(localFilePath, onStatusChange)
         return {
           success: true,
           parsed: result.parsed,
@@ -178,6 +239,15 @@ export const processDocumentV2 = inngest.createFunction(
       })
 
       return { success: true }
+    })
+
+    // Step 4: 一時ファイルのクリーンアップ
+    await step.run("cleanup", async () => {
+      // Storage形式の場合のみクリーンアップ
+      if (filePath.startsWith("uploads/") || filePath.startsWith("documents/")) {
+        await cleanupTempFile(localFilePath)
+      }
+      return { cleaned: true }
     })
 
     // 結果のサマリーを返す

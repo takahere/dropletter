@@ -1,16 +1,16 @@
 import { NextRequest, NextResponse } from "next/server"
-import { writeFile, mkdir } from "fs/promises"
-import { tmpdir } from "os"
-import path from "path"
 import { randomUUID } from "crypto"
+import { createServiceClient } from "@/lib/supabase/server"
 
 // API Route設定
 export const maxDuration = 60 // 最大実行時間（秒）
 export const dynamic = "force-dynamic" // 動的ルート
 
+const BUCKET_NAME = "uploads"
+
 /**
  * PDFファイルアップロードAPI
- * FormDataでファイルを受け取り、一時ディレクトリに保存
+ * FormDataでファイルを受け取り、Supabase Storageに保存
  */
 export async function POST(req: NextRequest) {
   console.log("[Upload] リクエスト受信")
@@ -59,17 +59,12 @@ export async function POST(req: NextRequest) {
       )
     }
 
-    // 一時ディレクトリにDropletter用のサブディレクトリを作成
-    const uploadDir = path.join(tmpdir(), "dropletter-uploads")
-    await mkdir(uploadDir, { recursive: true })
-
     // ユニークなファイル名を生成
-    const ext = path.extname(file.name) || ".pdf"
+    const ext = file.name.split('.').pop() || "pdf"
     const uniqueId = randomUUID()
-    const fileName = `${uniqueId}${ext}`
-    const filePath = path.join(uploadDir, fileName)
+    const storagePath = `${uniqueId}.${ext}`
 
-    // ファイルをバッファとして読み込み、保存
+    // ファイルをバッファとして読み込み
     let bytes: ArrayBuffer
     try {
       bytes = await file.arrayBuffer()
@@ -83,17 +78,28 @@ export async function POST(req: NextRequest) {
 
     const buffer = Buffer.from(bytes)
 
-    try {
-      await writeFile(filePath, buffer)
-    } catch (writeError) {
-      console.error("[Upload] ファイル書き込みエラー:", writeError)
+    // Supabase Storageにアップロード
+    const supabase = createServiceClient()
+
+    const { data, error: uploadError } = await supabase.storage
+      .from(BUCKET_NAME)
+      .upload(storagePath, buffer, {
+        contentType: file.type,
+        upsert: false,
+      })
+
+    if (uploadError) {
+      console.error("[Upload] Supabase Storage エラー:", uploadError)
       return NextResponse.json(
-        { success: false, error: "ファイルの保存に失敗しました" },
+        { success: false, error: `ストレージエラー: ${uploadError.message}` },
         { status: 500 }
       )
     }
 
-    console.log(`[Upload] ファイル保存完了: ${filePath}`)
+    console.log(`[Upload] ファイル保存完了: ${data.path}`)
+
+    // filePath はストレージパスとして返す（bucket/path形式）
+    const filePath = `${BUCKET_NAME}/${storagePath}`
 
     return NextResponse.json({
       success: true,
