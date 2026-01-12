@@ -1,7 +1,8 @@
-import { spawn } from "child_process"
-import path from "path"
-
-const SKILLS_DIR = path.join(process.cwd(), ".claude/skills")
+import Anthropic from "@anthropic-ai/sdk"
+import Groq from "groq-sdk"
+import { LlamaParseReader } from "llamaindex"
+import * as pdfjs from "pdfjs-dist"
+import { readFile } from "fs/promises"
 
 // Agent types
 export type AgentType = "fast-check" | "deep-reason" | "visual-parse" | "pii-masking"
@@ -107,113 +108,33 @@ export interface PdfHighlightOutput {
   pageCount: number
 }
 
-/**
- * Extract JSON from a string that may contain other text (warnings, logs, etc.)
- */
-function extractJSON(text: string): string {
-  // Try to find JSON object
-  const objectMatch = text.match(/\{[\s\S]*\}/)
-  if (objectMatch) {
-    // Validate it's proper JSON
-    try {
-      JSON.parse(objectMatch[0])
-      return objectMatch[0]
-    } catch {
-      // Not valid JSON, continue
-    }
-  }
+// ============================================
+// Fast Check - Groq/Llama 3 による高速NGワード検出
+// ============================================
 
-  // Try to find JSON array
-  const arrayMatch = text.match(/\[[\s\S]*\]/)
-  if (arrayMatch) {
-    try {
-      JSON.parse(arrayMatch[0])
-      return arrayMatch[0]
-    } catch {
-      // Not valid JSON
+const FAST_CHECK_SYSTEM_PROMPT = `You are a fast NG word detector. Analyze the text and identify potentially problematic words or phrases.
+Output JSON only with this structure:
+{
+  "ngWords": [
+    {
+      "word": "string",
+      "position": number,
+      "severity": "high" | "medium" | "low",
+      "reason": "string"
     }
-  }
-
-  // Return original text if no JSON found
-  return text
+  ]
 }
 
-/**
- * Execute a Python skill script via subprocess
- */
-async function runPythonSkill(
-  skillName: string,
-  scriptName: string,
-  args: string[],
-  timeoutMs: number = 60000
-): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const scriptPath = path.join(SKILLS_DIR, skillName, "scripts", scriptName)
+Focus on:
+- Discriminatory language (差別的表現)
+- Defamatory statements (名誉毀損)
+- Privacy violations (プライバシー侵害)
+- Threatening content (脅迫・恐喝)
+- Inappropriate content (不適切なコンテンツ)
+- Legal risks (法的リスク)
 
-    // 環境変数を明示的に設定（Next.jsの.env.localから確実に渡す）
-    const env: NodeJS.ProcessEnv = {
-      ...process.env,
-      // API Keys を明示的に渡す
-      ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY || "",
-      GROQ_API_KEY: process.env.GROQ_API_KEY || "",
-      LLAMA_CLOUD_API_KEY: process.env.LLAMA_CLOUD_API_KEY || "",
-    }
-
-    // デバッグ: 環境変数が設定されているか確認（常にログ出力）
-    if (skillName === "visual-parse") {
-      console.log("[Runner] LLAMA_CLOUD_API_KEY present:", !!env.LLAMA_CLOUD_API_KEY)
-      if (!env.LLAMA_CLOUD_API_KEY) {
-        console.error("[Runner] LLAMA_CLOUD_API_KEY is not set! Check .env.local")
-      }
-    }
-
-    const proc = spawn("python", [scriptPath, ...args], { env })
-
-    let stdout = ""
-    let stderr = ""
-    let killed = false
-
-    proc.stdout.on("data", (data) => {
-      stdout += data.toString()
-    })
-
-    proc.stderr.on("data", (data) => {
-      stderr += data.toString()
-    })
-
-    proc.on("close", (code) => {
-      if (killed) return
-      if (code === 0) {
-        // Extract JSON from output (ignore warnings/logs)
-        const jsonOutput = extractJSON(stdout)
-        resolve(jsonOutput)
-      } else {
-        // Even on error, try to extract JSON from stdout
-        const jsonOutput = extractJSON(stdout)
-        if (jsonOutput !== stdout && jsonOutput.startsWith("{")) {
-          resolve(jsonOutput)
-        } else {
-          reject(new Error(stderr || `Process exited with code ${code}`))
-        }
-      }
-    })
-
-    proc.on("error", (err) => {
-      reject(err)
-    })
-
-    // Timeout handling
-    const timer = setTimeout(() => {
-      killed = true
-      proc.kill()
-      reject(new Error(`Timeout after ${timeoutMs}ms`))
-    }, timeoutMs)
-
-    proc.on("close", () => {
-      clearTimeout(timer)
-    })
-  })
-}
+Be fast and accurate. Output ONLY valid JSON.
+Respond in Japanese for the reason field.`
 
 /**
  * Run the fast-check agent using Groq (Llama 3)
@@ -223,11 +144,25 @@ export async function runFastCheck(text: string): Promise<FastCheckResult> {
   const startTime = Date.now()
 
   try {
-    const output = await runPythonSkill("fast-check", "fast_check.py", [text])
-    const result = JSON.parse(output)
+    const groq = new Groq({ apiKey: process.env.GROQ_API_KEY })
+
+    const response = await groq.chat.completions.create({
+      model: "llama-3.3-70b-versatile",
+      messages: [
+        { role: "system", content: FAST_CHECK_SYSTEM_PROMPT },
+        { role: "user", content: text },
+      ],
+      temperature: 0.1,
+      max_tokens: 1024,
+      response_format: { type: "json_object" },
+    })
+
+    const content = response.choices[0]?.message?.content || "{}"
+    const parsed = JSON.parse(content)
+
     return {
-      ngWords: result.ngWords || [],
-      processingTimeMs: result.processingTimeMs || (Date.now() - startTime),
+      ngWords: parsed.ngWords || [],
+      processingTimeMs: Date.now() - startTime,
     }
   } catch (error) {
     console.error("Fast check error:", error)
@@ -238,6 +173,58 @@ export async function runFastCheck(text: string): Promise<FastCheckResult> {
   }
 }
 
+// ============================================
+// Deep Reason - Claude による詳細な法的判定
+// ============================================
+
+const DEEP_REASON_PROMPT = `以下のテキストを法的観点から詳細に分析し、問題点と修正案を提案してください。
+
+{fast_check_context}
+
+## 分析対象テキスト:
+{text}
+
+## 出力形式 (JSON):
+{
+  "legalJudgment": {
+    "isCompliant": boolean,
+    "riskLevel": "none" | "low" | "medium" | "high" | "critical",
+    "issues": [
+      {
+        "type": "法的問題のカテゴリ",
+        "description": "問題の詳細説明",
+        "location": "問題箇所の引用",
+        "suggestedFix": "修正案"
+      }
+    ]
+  },
+  "modifications": [
+    {
+      "original": "元のテキスト",
+      "modified": "修正後のテキスト",
+      "reason": "修正理由"
+    }
+  ],
+  "postalWorkerExplanation": "郵便局員への説明文（わかりやすい日本語で）",
+  "summary": "全体の要約（100文字以内）"
+}
+
+法的観点には以下を含めてください：
+- 個人情報保護法
+- 名誉毀損・侮辱
+- 脅迫・恐喝
+- 景品表示法
+- 特定商取引法
+- 著作権法
+
+郵便局員への説明は、以下の点に注意：
+- 専門用語を避ける
+- 具体的な問題箇所を引用する
+- 修正案を提示する
+- 丁寧な言葉遣い
+
+必ず有効なJSONのみを出力してください。`
+
 /**
  * Run the deep-reason agent using Claude
  * Performs detailed legal judgment and generates modification suggestions
@@ -247,13 +234,45 @@ export async function runDeepReason(
   fastCheckResult?: FastCheckResult
 ): Promise<DeepReasonResult> {
   try {
-    const args = [text]
+    const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
+
+    // Build context from fast check results
+    let fastCheckContext = ""
     if (fastCheckResult) {
-      args.push(JSON.stringify({ ngWords: fastCheckResult.ngWords }))
+      fastCheckContext = `
+## Fast Check Results (Pre-analysis):
+${JSON.stringify(fastCheckResult.ngWords, null, 2)}
+`
     }
 
-    const output = await runPythonSkill("deep-reason", "deep_reason.py", args)
-    return JSON.parse(output) as DeepReasonResult
+    const prompt = DEEP_REASON_PROMPT
+      .replace("{text}", text)
+      .replace("{fast_check_context}", fastCheckContext)
+
+    const response = await anthropic.messages.create({
+      model: "claude-sonnet-4-20250514",
+      max_tokens: 4096,
+      messages: [{ role: "user", content: prompt }],
+    })
+
+    const content = response.content[0].type === "text" ? response.content[0].text : ""
+
+    // Extract JSON from response (handle markdown code blocks)
+    const jsonMatch = content.match(/```json\s*([\s\S]*?)\s*```/)
+    const jsonStr = jsonMatch ? jsonMatch[1] : content
+
+    const parsed = JSON.parse(jsonStr)
+
+    return {
+      legalJudgment: {
+        isCompliant: parsed.legalJudgment?.isCompliant ?? true,
+        riskLevel: parsed.legalJudgment?.riskLevel ?? "none",
+        issues: parsed.legalJudgment?.issues ?? [],
+      },
+      modifications: parsed.modifications ?? [],
+      postalWorkerExplanation: parsed.postalWorkerExplanation ?? "解析に失敗しました。",
+      summary: parsed.summary ?? "",
+    }
   } catch (error) {
     console.error("Deep reason error:", error)
     return {
@@ -269,6 +288,10 @@ export async function runDeepReason(
   }
 }
 
+// ============================================
+// Visual Parse - LlamaParse による PDF解析
+// ============================================
+
 /**
  * Run the visual-parse agent using LlamaParse
  * Converts PDF to structured markdown
@@ -278,27 +301,114 @@ export async function runVisualParse(
   language: string = "ja"
 ): Promise<VisualParseResult> {
   try {
-    const output = await runPythonSkill("visual-parse", "visual_parse.py", [
-      filePath,
-      language,
-    ])
-    const result = JSON.parse(output) as VisualParseResult & { error?: string }
+    const apiKey = process.env.LLAMA_CLOUD_API_KEY
 
-    // エラーフィールドがある場合はエラーをスロー
-    if (result.error) {
-      throw new Error(`PDF解析エラー: ${result.error}`)
+    console.log("[VisualParse] LLAMA_CLOUD_API_KEY present:", !!apiKey)
+
+    if (!apiKey) {
+      throw new Error("LLAMA_CLOUD_API_KEY is not set")
     }
 
-    return result
+    const reader = new LlamaParseReader({
+      apiKey,
+      resultType: "markdown",
+      language,
+    })
+
+    console.log("[VisualParse] Loading file:", filePath)
+
+    const documents = await reader.loadData(filePath)
+
+    console.log("[VisualParse] Documents loaded:", documents.length)
+
+    // Combine all pages into markdown
+    const markdownParts: string[] = []
+    const pages: VisualParseResult["pages"] = []
+
+    for (let i = 0; i < documents.length; i++) {
+      const doc = documents[i]
+      const pageContent = doc.text
+
+      markdownParts.push(pageContent)
+
+      pages.push({
+        pageNumber: i + 1,
+        content: pageContent,
+        images: doc.metadata?.images ?? undefined,
+        tables: doc.metadata?.tables ?? undefined,
+      })
+    }
+
+    const fullMarkdown = markdownParts.join("\n\n---\n\n")
+
+    return {
+      markdown: fullMarkdown,
+      metadata: {
+        pageCount: documents.length,
+        title: documents[0]?.metadata?.title,
+        author: documents[0]?.metadata?.author,
+      },
+      pages,
+    }
   } catch (error) {
     console.error("Visual parse error:", error)
-    // エラーを再スローして上位で処理
     throw error
   }
 }
 
+// ============================================
+// PII Masking - Claude による個人情報検出・マスキング
+// ============================================
+
+const PII_MASKING_PROMPT = `以下のテキストから個人情報（PII）を検出してください。
+
+## 検出対象:
+- PERSON: 人名（姓名、ニックネーム）
+- PHONE_NUMBER: 電話番号
+- EMAIL_ADDRESS: メールアドレス
+- ADDRESS: 住所、所在地
+- CREDIT_CARD: クレジットカード番号
+- DATE_TIME: 生年月日、具体的な日時
+- ORGANIZATION: 会社名、組織名
+- IP_ADDRESS: IPアドレス
+
+## 入力テキスト:
+{text}
+
+## 出力形式 (JSON):
+{
+  "detectedEntities": [
+    {
+      "type": "PERSON" | "PHONE_NUMBER" | "EMAIL_ADDRESS" | "ADDRESS" | "CREDIT_CARD" | "DATE_TIME" | "ORGANIZATION" | "IP_ADDRESS",
+      "text": "検出されたテキスト",
+      "start": 開始位置（文字インデックス）,
+      "end": 終了位置（文字インデックス）,
+      "score": 確信度（0.0-1.0）
+    }
+  ]
+}
+
+注意:
+- 確実にPIIと判断できるもののみを検出してください
+- 一般的な用語（「お客様」など）は除外してください
+- 日本語特有の表記にも対応してください
+- 必ず有効なJSONのみを出力してください`
+
+// Entity type to placeholder mapping
+const ENTITY_PLACEHOLDERS: Record<string, string> = {
+  PERSON: "<PERSON>",
+  LOCATION: "<ADDRESS>",
+  ADDRESS: "<ADDRESS>",
+  PHONE_NUMBER: "<PHONE>",
+  EMAIL_ADDRESS: "<EMAIL>",
+  CREDIT_CARD: "<CREDIT_CARD>",
+  DATE_TIME: "<DATE>",
+  ORGANIZATION: "<ORG>",
+  IP_ADDRESS: "<IP>",
+}
+
 /**
- * Run the pii-masking agent using Microsoft Presidio
+ * Run the pii-masking agent using Claude
  * Detects and masks personal information
  */
 export async function runPiiMasking(
@@ -306,11 +416,58 @@ export async function runPiiMasking(
   scoreThreshold: number = 0.7
 ): Promise<PIIMaskingResult> {
   try {
-    const output = await runPythonSkill("pii-masking", "pii_masking.py", [
-      text,
-      scoreThreshold.toString(),
-    ])
-    return JSON.parse(output) as PIIMaskingResult
+    const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
+
+    const prompt = PII_MASKING_PROMPT.replace("{text}", text)
+
+    const response = await anthropic.messages.create({
+      model: "claude-sonnet-4-20250514",
+      max_tokens: 4096,
+      messages: [{ role: "user", content: prompt }],
+    })
+
+    const content = response.content[0].type === "text" ? response.content[0].text : ""
+
+    // Extract JSON from response
+    const jsonMatch = content.match(/```json\s*([\s\S]*?)\s*```/)
+    const jsonStr = jsonMatch ? jsonMatch[1] : content
+
+    const parsed = JSON.parse(jsonStr)
+
+    // Filter by score threshold
+    const detectedEntities = (parsed.detectedEntities || []).filter(
+      (e: { score: number }) => e.score >= scoreThreshold
+    )
+
+    // Sort by position (descending) for replacement
+    const sortedEntities = [...detectedEntities].sort(
+      (a: { start: number }, b: { start: number }) => b.start - a.start
+    )
+
+    // Create masked text
+    let maskedText = text
+    for (const entity of sortedEntities) {
+      const placeholder = ENTITY_PLACEHOLDERS[entity.type] || `<${entity.type}>`
+      maskedText =
+        maskedText.substring(0, entity.start) +
+        placeholder +
+        maskedText.substring(entity.end)
+    }
+
+    // Calculate statistics
+    const byType: Record<string, number> = {}
+    for (const entity of detectedEntities) {
+      byType[entity.type] = (byType[entity.type] || 0) + 1
+    }
+
+    return {
+      maskedText,
+      detectedEntities,
+      statistics: {
+        totalDetected: detectedEntities.length,
+        byType,
+      },
+    }
   } catch (error) {
     console.error("PII masking error:", error)
     return {
@@ -321,8 +478,22 @@ export async function runPiiMasking(
   }
 }
 
+// ============================================
+// PDF Highlight - pdfjs-dist による位置検索
+// ============================================
+
 /**
- * Run the pdf-highlight agent using PyMuPDF
+ * Normalize text for Japanese search
+ */
+function normalizeText(text: string): string {
+  // Unicode normalization (NFKC)
+  const normalized = text.normalize("NFKC")
+  // Remove whitespace
+  return normalized.replace(/\s+/g, "").toLowerCase()
+}
+
+/**
+ * Run the pdf-highlight agent using pdfjs-dist
  * Finds text positions in PDF for highlighting
  */
 export async function runPdfHighlight(
@@ -330,12 +501,133 @@ export async function runPdfHighlight(
   searchItems: PdfHighlightInput["searchItems"]
 ): Promise<PdfHighlightOutput> {
   try {
-    const searchItemsJson = JSON.stringify(searchItems)
-    const output = await runPythonSkill("pdf-highlight", "pdf_highlight.py", [
-      filePath,
-      searchItemsJson,
-    ])
-    return JSON.parse(output) as PdfHighlightOutput
+    console.log("[PdfHighlight] Processing:", filePath)
+    console.log("[PdfHighlight] Search items count:", searchItems.length)
+
+    // Read PDF file
+    const data = await readFile(filePath)
+    const pdfDocument = await pdfjs.getDocument({ data }).promise
+
+    const pageCount = pdfDocument.numPages
+    console.log("[PdfHighlight] PDF loaded, pages:", pageCount)
+
+    const highlights: PdfHighlightOutput["highlights"] = []
+    const notFound: string[] = []
+
+    // Build page text content cache
+    const pageTextContents: Array<{
+      text: string
+      normalizedText: string
+      items: Array<{
+        str: string
+        transform: number[]
+        width: number
+        height: number
+      }>
+      viewport: { width: number; height: number }
+    }> = []
+
+    for (let pageNum = 1; pageNum <= pageCount; pageNum++) {
+      const page = await pdfDocument.getPage(pageNum)
+      const viewport = page.getViewport({ scale: 1.0 })
+      const textContent = await page.getTextContent()
+
+      const items = textContent.items
+        .filter((item): item is { str: string; transform: number[]; width: number; height: number } =>
+          "str" in item
+        )
+
+      const fullText = items.map((item) => item.str).join("")
+      const normalizedFullText = normalizeText(fullText)
+
+      pageTextContents.push({
+        text: fullText,
+        normalizedText: normalizedFullText,
+        items,
+        viewport: { width: viewport.width, height: viewport.height },
+      })
+    }
+
+    // Search for each item
+    for (const item of searchItems) {
+      const searchText = item.text
+      const normalizedSearch = normalizeText(searchText)
+      const positions: PdfHighlightOutput["highlights"][0]["positions"] = []
+
+      console.log(`[PdfHighlight] Searching for: '${searchText}'`)
+
+      for (let pageIdx = 0; pageIdx < pageTextContents.length; pageIdx++) {
+        const pageContent = pageTextContents[pageIdx]
+        const pageNum = pageIdx + 1
+
+        // Check if text exists on this page
+        if (pageContent.normalizedText.includes(normalizedSearch)) {
+          console.log(`[PdfHighlight] Found on page ${pageNum}`)
+
+          // Find approximate position by iterating through text items
+          let currentPos = 0
+          for (const textItem of pageContent.items) {
+            const itemNormalized = normalizeText(textItem.str)
+
+            if (itemNormalized.includes(normalizedSearch)) {
+              // Found! Calculate normalized position
+              const transform = textItem.transform
+              const x = transform[4]
+              const y = transform[5]
+
+              positions.push({
+                pageNumber: pageNum,
+                x0: x / pageContent.viewport.width,
+                y0: 1 - (y / pageContent.viewport.height), // Invert Y
+                x1: (x + textItem.width) / pageContent.viewport.width,
+                y1: 1 - ((y - textItem.height) / pageContent.viewport.height),
+              })
+            }
+
+            currentPos += textItem.str.length
+          }
+
+          // If no exact match in items, try to find in concatenated text
+          if (positions.length === 0 && pageContent.text.toLowerCase().includes(searchText.toLowerCase())) {
+            // Fallback: use first text item position as approximation
+            const firstItem = pageContent.items[0]
+            if (firstItem) {
+              const transform = firstItem.transform
+              positions.push({
+                pageNumber: pageNum,
+                x0: transform[4] / pageContent.viewport.width,
+                y0: 1 - (transform[5] / pageContent.viewport.height),
+                x1: (transform[4] + 100) / pageContent.viewport.width,
+                y1: 1 - ((transform[5] - 20) / pageContent.viewport.height),
+              })
+            }
+          }
+        }
+      }
+
+      if (positions.length > 0) {
+        highlights.push({
+          id: item.id,
+          type: item.type,
+          text: item.text,
+          severity: item.severity,
+          reason: item.reason,
+          suggestedFix: item.suggestedFix,
+          positions,
+        })
+      } else {
+        notFound.push(item.text)
+        console.log(`[PdfHighlight] NOT FOUND: '${item.text}'`)
+      }
+    }
+
+    console.log(`[PdfHighlight] Result: ${highlights.length} highlights, ${notFound.length} not found`)
+
+    return {
+      highlights,
+      notFound,
+      pageCount,
+    }
   } catch (error) {
     console.error("PDF highlight error:", error)
     return {
@@ -345,6 +637,10 @@ export async function runPdfHighlight(
     }
   }
 }
+
+// ============================================
+// Generic Agent Runner
+// ============================================
 
 /**
  * Generic agent runner that dispatches to the appropriate agent
@@ -418,6 +714,10 @@ export async function runAgent(
     }
   }
 }
+
+// ============================================
+// Pipeline Functions
+// ============================================
 
 /**
  * Run text-based pipeline (pii-masking → fast-check → deep-reason)
