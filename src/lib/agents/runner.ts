@@ -40,6 +40,13 @@ export interface DeepReasonResult {
     modified: string
     reason: string
   }>
+  shinshoJudgment?: {
+    isShinsho: boolean
+    confidence: "high" | "medium" | "low"
+    reason: string
+    documentType: string
+    relevantPatterns: string[]
+  }
   postalWorkerExplanation: string
   summary: string
 }
@@ -204,23 +211,77 @@ const DEEP_REASON_PROMPT = `以下のテキストを法的観点から詳細に�
       "reason": "修正理由"
     }
   ],
+  "shinshoJudgment": {
+    "isShinsho": boolean,
+    "confidence": "high" | "medium" | "low",
+    "reason": "信書該当/非該当の理由",
+    "documentType": "文書の種類（書状、請求書の類、証明書の類など）",
+    "relevantPatterns": ["該当するパターン"]
+  },
   "postalWorkerExplanation": "郵便局員への説明文（わかりやすい日本語で）",
   "summary": "全体の要約（100文字以内）"
 }
 
-法的観点には以下を含めてください：
+## 法的観点には以下を含めてください：
 - 個人情報保護法
 - 名誉毀損・侮辱
 - 脅迫・恐喝
 - 景品表示法
 - 特定商取引法
 - 著作権法
+- **信書便法（郵便法第4条）**
 
-郵便局員への説明は、以下の点に注意：
+## 信書の判定基準（総務省ガイドラインに基づく）
+
+### 信書の定義
+「信書」とは、「特定の受取人に対し、差出人の意思を表示し、又は事実を通知する文書」
+
+### 用語の定義
+- **特定の受取人**: 差出人がその意思の表示又は事実の通知を受ける者として特に定めた者
+- **意思を表示し、又は事実を通知する**: 差出人の考えや思いを表し、又は現実に起こり若しくは存在する事柄等の事実を伝えること
+- **文書**: 文字、記号、符号等人の知覚によって認識することができる情報が記載された紙その他の有体物（電磁的記録物は信書ではない）
+
+### 信書に該当する文書
+1. **書状**: 考えや用件などの意思を表示し、又は事実を通知する文書
+2. **請求書の類**: 納品書、領収書、見積書、願書、申込書、申請書、申告書、依頼書、契約書、照会書、回答書、承諾書、レセプト、推薦書、注文書等
+3. **会議招集通知の類**: 結婚式等の招待状、業務を報告する文書
+4. **許可書の類**: 免許証、認定書、表彰状（カード形状含む）
+5. **証明書の類**: 印鑑証明書、納税証明書、戸籍謄本、住民票の写し、健康保険証、車検証、履歴書、保険証券等
+6. **ダイレクトメール（信書該当）**:
+   - 文書自体に受取人が記載されている（○○様、△△会員の皆様等）
+   - 商品の購入等利用関係を示す文言がある
+   - 契約関係等を示す文言がある
+
+### 信書に該当しない文書
+1. **書籍の類**: 新聞、雑誌、会報、会誌、手帳、カレンダー、ポスター
+2. **カタログ**: 商品紹介集
+3. **小切手の類**: 手形、株券
+4. **プリペイドカードの類**: 商品券、図書券
+5. **乗車券の類**: 航空券、定期券、入場券
+6. **クレジットカードの類**: キャッシュカード、ローンカード
+7. **会員カードの類**: 入会証、ポイントカード、マイレージカード
+8. **ダイレクトメール（信書非該当）**:
+   - 街頭配布や新聞折り込み前提のチラシ
+   - 店頭配布前提のパンフレット
+9. **その他**: 取扱説明書、配送伝票、名刺、振込用紙等
+
+### ダイレクトメールの信書性判断の注意点
+- 「お客様各位」「日ごろ御利用いただきありがとうございます」は商取引上の慣用語であり、これのみでは信書に該当しない
+- 「○○様」「△△会員の皆様」「先日は○○を購入いただきありがとうございます」等は信書に該当
+- 「年に一度の特別企画」「お得な車検のお知らせ」等、特定の受取人を示さない文言のみの場合は信書に該当しない
+
+### 添え状・送り状の例外
+貨物に添付する無封の添え状・送り状については、運送営業者による送達が認められている（郵便法第4条第3項但書）
+
+### 罰則
+郵便法第76条：第四条の規定に違反した者は、三年以下の懲役又は三百万円以下の罰金に処する
+
+## 郵便局員への説明は、以下の点に注意：
 - 専門用語を避ける
 - 具体的な問題箇所を引用する
 - 修正案を提示する
 - 丁寧な言葉遣い
+- **信書該当/非該当の判断理由を明確に説明する**
 
 必ず有効なJSONのみを出力してください。`
 
@@ -362,7 +423,14 @@ export async function runVisualParse(
       throw new Error(`LlamaParse upload failed: ${uploadResponse.status} - ${errorText}`)
     }
 
-    const uploadResult = (await uploadResponse.json()) as LlamaParseJobResponse
+    // Parse response with error handling for malformed JSON
+    let uploadResult: LlamaParseJobResponse
+    try {
+      uploadResult = (await uploadResponse.json()) as LlamaParseJobResponse
+    } catch (parseError) {
+      const responseText = await uploadResponse.clone().text().catch(() => "Unable to read response")
+      throw new Error(`LlamaParse upload returned invalid JSON: ${responseText.substring(0, 200)}`)
+    }
     const jobId = uploadResult.id
 
     console.log("[VisualParse] Job created:", jobId)
@@ -386,10 +454,16 @@ export async function runVisualParse(
       })
 
       if (!statusResponse.ok) {
-        throw new Error(`LlamaParse status check failed: ${statusResponse.status}`)
+        const errorText = await statusResponse.text().catch(() => "")
+        throw new Error(`LlamaParse status check failed: ${statusResponse.status} - ${errorText}`)
       }
 
-      statusResult = (await statusResponse.json()) as LlamaParseStatusResponse
+      try {
+        statusResult = (await statusResponse.json()) as LlamaParseStatusResponse
+      } catch (parseError) {
+        const responseText = await statusResponse.clone().text().catch(() => "Unable to read response")
+        throw new Error(`LlamaParse status returned invalid JSON: ${responseText.substring(0, 200)}`)
+      }
       status = statusResult.status
 
       console.log(`[VisualParse] Job status: ${status} (attempt ${attempts}/${maxAttempts})`)
@@ -409,10 +483,17 @@ export async function runVisualParse(
     })
 
     if (!resultResponse.ok) {
-      throw new Error(`LlamaParse result fetch failed: ${resultResponse.status}`)
+      const errorText = await resultResponse.text().catch(() => "")
+      throw new Error(`LlamaParse result fetch failed: ${resultResponse.status} - ${errorText}`)
     }
 
-    const resultData = (await resultResponse.json()) as LlamaParseResultResponse
+    let resultData: LlamaParseResultResponse
+    try {
+      resultData = (await resultResponse.json()) as LlamaParseResultResponse
+    } catch (parseError) {
+      const responseText = await resultResponse.clone().text().catch(() => "Unable to read response")
+      throw new Error(`LlamaParse result returned invalid JSON: ${responseText.substring(0, 200)}`)
+    }
     const markdown = resultData.markdown
 
     console.log("[VisualParse] Markdown retrieved, length:", markdown.length)
@@ -595,8 +676,9 @@ export async function runPdfHighlight(
     console.log("[PdfHighlight] Processing:", filePath)
     console.log("[PdfHighlight] Search items count:", searchItems.length)
 
-    // Read PDF file
-    const data = await readFile(filePath)
+    // Read PDF file and convert Buffer to Uint8Array for pdfjs-dist compatibility
+    const buffer = await readFile(filePath)
+    const data = new Uint8Array(buffer)
     const pdfDocument = await pdfjs.getDocument({ data }).promise
 
     const pageCount = pdfDocument.numPages
