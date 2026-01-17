@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { stripe } from '@/lib/stripe/client'
+import { getStripe } from '@/lib/stripe/client'
 import { createServiceClient } from '@/lib/supabase/server'
 import Stripe from 'stripe'
 
@@ -12,7 +12,7 @@ export async function POST(request: NextRequest) {
   let event: Stripe.Event
 
   try {
-    event = stripe.webhooks.constructEvent(body, signature, webhookSecret)
+    event = getStripe().webhooks.constructEvent(body, signature, webhookSecret)
   } catch (err) {
     console.error('Webhook signature verification failed:', err)
     return NextResponse.json(
@@ -126,7 +126,7 @@ async function handleSubscriptionChange(
   subscription: Stripe.Subscription
 ) {
   // Get user_id from customer
-  const customer = await stripe.customers.retrieve(subscription.customer as string)
+  const customer = await getStripe().customers.retrieve(subscription.customer as string)
   const userId = (customer as Stripe.Customer).metadata?.supabase_user_id
 
   if (!userId) {
@@ -139,6 +139,8 @@ async function handleSubscriptionChange(
                  subscription.status === 'canceled' ? 'canceled' : 'inactive'
 
   // Upsert subscription record
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const sub = subscription as any
   await supabase
     .from('subscriptions')
     .upsert({
@@ -146,8 +148,8 @@ async function handleSubscriptionChange(
       stripe_subscription_id: subscription.id,
       stripe_price_id: subscription.items.data[0]?.price.id,
       status,
-      current_period_start: new Date(subscription.current_period_start * 1000).toISOString(),
-      current_period_end: new Date(subscription.current_period_end * 1000).toISOString(),
+      current_period_start: new Date(sub.current_period_start * 1000).toISOString(),
+      current_period_end: new Date(sub.current_period_end * 1000).toISOString(),
       cancel_at_period_end: subscription.cancel_at_period_end,
     }, {
       onConflict: 'stripe_subscription_id',
@@ -168,7 +170,7 @@ async function handleSubscriptionDeleted(
   supabase: ReturnType<typeof createServiceClient>,
   subscription: Stripe.Subscription
 ) {
-  const customer = await stripe.customers.retrieve(subscription.customer as string)
+  const customer = await getStripe().customers.retrieve(subscription.customer as string)
   const userId = (customer as Stripe.Customer).metadata?.supabase_user_id
 
   if (!userId) {
@@ -216,7 +218,7 @@ async function handleInvoicePaymentFailed(
   supabase: ReturnType<typeof createServiceClient>,
   invoice: Stripe.Invoice
 ) {
-  const customer = await stripe.customers.retrieve(invoice.customer as string)
+  const customer = await getStripe().customers.retrieve(invoice.customer as string)
   const userId = (customer as Stripe.Customer).metadata?.supabase_user_id
 
   if (userId) {

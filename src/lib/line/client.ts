@@ -220,6 +220,24 @@ export function reportResultFlexMessage(
 }
 
 /**
+ * Notify LINE user about completed report
+ */
+export async function notifyLineUser(
+  lineUserId: string,
+  reportId: string,
+  fileName: string,
+  riskLevel: string,
+  summary: string
+) {
+  const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://dropletter.app'
+  const shareUrl = `${baseUrl}/share/${reportId}`
+
+  await pushMessage(lineUserId, [
+    reportResultFlexMessage(fileName, riskLevel, summary, shareUrl),
+  ])
+}
+
+/**
  * Create a processing message
  */
 export function processingFlexMessage(fileName: string): LineMessage {

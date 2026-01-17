@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import crypto from 'crypto'
 import { createServiceClient } from '@/lib/supabase/server'
-import { inngest } from '@/inngest/client'
+import { inngest } from '../../../../../inngest/client'
 import {
   replyMessage,
   pushMessage,
@@ -162,15 +162,17 @@ async function handleFileMessage(
       throw new Error(`Report creation failed: ${reportError.message}`)
     }
 
-    // Store LINE user ID for notification
-    await supabase.from('line_notifications').upsert({
-      report_id: report.id,
-      line_user_id: userId,
-    }, {
-      onConflict: 'report_id',
-    }).catch(() => {
+    // Store LINE user ID for notification (table may not exist yet)
+    try {
+      await supabase.from('line_notifications').upsert({
+        report_id: report.id,
+        line_user_id: userId,
+      }, {
+        onConflict: 'report_id',
+      })
+    } catch {
       // Table might not exist yet, that's OK
-    })
+    }
 
     // Trigger processing
     await inngest.send({
@@ -248,21 +250,3 @@ async function handlePostback(replyToken: string, userId: string, data: string) 
   }
 }
 
-/**
- * Notify LINE user about completed report
- * Called from Inngest function when processing completes
- */
-export async function notifyLineUser(
-  lineUserId: string,
-  reportId: string,
-  fileName: string,
-  riskLevel: string,
-  summary: string
-) {
-  const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://dropletter.app'
-  const shareUrl = `${baseUrl}/share/${reportId}`
-
-  await pushMessage(lineUserId, [
-    reportResultFlexMessage(fileName, riskLevel, summary, shareUrl),
-  ])
-}

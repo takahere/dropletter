@@ -22,7 +22,9 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
     .eq('token', token)
     .single()
 
-  const report = shareLink?.report as { id: string; file_name: string } | null
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const reportData = shareLink?.report as any
+  const report = reportData && !Array.isArray(reportData) ? reportData as { id: string; file_name: string } : null
   const title = report
     ? `${report.file_name} - DropLetter解析結果`
     : 'DropLetter - ドキュメント解析結果'
@@ -93,13 +95,8 @@ export default async function ShareTokenPage({ params }: Props) {
     })
   }
 
-  const report = shareLink.report as {
-    id: string
-    file_name: string
-    status: string
-    result_json: Record<string, unknown>
-    human_edits: unknown[]
-  }
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const report = shareLink.report as any
 
   // Calculate days remaining
   const daysRemaining = Math.ceil(

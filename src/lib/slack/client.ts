@@ -248,6 +248,80 @@ export function createWelcomeBlocks(): SlackBlock[] {
 }
 
 /**
+ * Notify Slack channel about completed report
+ */
+export async function notifySlackChannel(
+  channel: string,
+  threadTs: string,
+  reportId: string,
+  fileName: string,
+  riskLevel: string,
+  summary: string
+) {
+  const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://dropletter.app'
+  const shareUrl = `${baseUrl}/share/${reportId}`
+
+  const riskEmoji: Record<string, string> = {
+    none: ':white_check_mark:',
+    low: ':large_blue_circle:',
+    medium: ':warning:',
+    high: ':orange_circle:',
+    critical: ':red_circle:',
+  }
+
+  const riskLabels: Record<string, string> = {
+    none: '問題なし',
+    low: '低リスク',
+    medium: '中リスク',
+    high: '高リスク',
+    critical: '危険',
+  }
+
+  await postMessage(
+    channel,
+    `${fileName} の解析が完了しました`,
+    [
+      {
+        type: 'section',
+        fields: [
+          {
+            type: 'mrkdwn',
+            text: `*ファイル:*\n${fileName}`,
+          },
+          {
+            type: 'mrkdwn',
+            text: `*リスク:*\n${riskEmoji[riskLevel] || ':grey_question:'} ${riskLabels[riskLevel] || '不明'}`,
+          },
+        ],
+      },
+      {
+        type: 'section',
+        text: {
+          type: 'mrkdwn',
+          text: `*概要:*\n${summary.slice(0, 300)}${summary.length > 300 ? '...' : ''}`,
+        },
+      },
+      {
+        type: 'actions',
+        elements: [
+          {
+            type: 'button',
+            text: {
+              type: 'plain_text',
+              text: '詳細を見る',
+              emoji: true,
+            },
+            url: shareUrl,
+            style: 'primary',
+          },
+        ],
+      },
+    ],
+    threadTs
+  )
+}
+
+/**
  * Create help blocks
  */
 export function createHelpBlocks(): SlackBlock[] {

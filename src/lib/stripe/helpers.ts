@@ -1,5 +1,5 @@
 import { createClient as createSupabaseClient } from '@/lib/supabase/server'
-import { stripe, PRICES, PLANS, HUMAN_REVIEW_PRICE } from './client'
+import { getStripe, PRICES, PLANS, HUMAN_REVIEW_PRICE } from './client'
 import type { PlanType } from './client'
 import type { UserProfile, Subscription } from '@/types/database'
 
@@ -21,7 +21,7 @@ export async function getOrCreateStripeCustomer(userId: string, email: string): 
   }
 
   // Create new Stripe customer
-  const customer = await stripe.customers.create({
+  const customer = await getStripe().customers.create({
     email,
     metadata: {
       supabase_user_id: userId,
@@ -49,7 +49,7 @@ export async function createSubscriptionCheckout(
 ): Promise<string> {
   const customerId = await getOrCreateStripeCustomer(userId, email)
 
-  const session = await stripe.checkout.sessions.create({
+  const session = await getStripe().checkout.sessions.create({
     customer: customerId,
     mode: 'subscription',
     payment_method_types: ['card'],
@@ -81,7 +81,7 @@ export async function createHumanReviewCheckout(
 ): Promise<string> {
   const customerId = await getOrCreateStripeCustomer(userId, email)
 
-  const session = await stripe.checkout.sessions.create({
+  const session = await getStripe().checkout.sessions.create({
     customer: customerId,
     mode: 'payment',
     payment_method_types: ['card'],
@@ -120,7 +120,7 @@ export async function createPortalSession(
 ): Promise<string> {
   const customerId = await getOrCreateStripeCustomer(userId, email)
 
-  const session = await stripe.billingPortal.sessions.create({
+  const session = await getStripe().billingPortal.sessions.create({
     customer: customerId,
     return_url: returnUrl,
   })

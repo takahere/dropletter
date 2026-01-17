@@ -16,13 +16,30 @@ export default async function HistoryPage() {
     redirect('/login?redirect=/history')
   }
 
-  // Get user's organizations
-  const { data: memberships } = await supabase
-    .from('organization_members')
-    .select('organization:organizations(id, name, slug)')
-    .eq('user_id', user.id)
+  // Get user's organizations (table may not exist yet)
+  let organizations: Array<{ id: string; name: string; slug: string }> = []
+  try {
+    const { data: memberships } = await supabase
+      .from('organization_members')
+      .select('organization:organizations(id, name, slug)')
+      .eq('user_id', user.id)
 
-  const organizations = memberships?.map(m => m.organization as { id: string; name: string; slug: string }) || []
+    if (memberships) {
+      for (const m of memberships) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const org = m.organization as any
+        if (org && typeof org === 'object' && 'id' in org) {
+          organizations.push({
+            id: org.id,
+            name: org.name,
+            slug: org.slug,
+          })
+        }
+      }
+    }
+  } catch {
+    // Table may not exist yet
+  }
 
   return (
     <main className="min-h-screen bg-gradient-to-b from-background to-muted/30">

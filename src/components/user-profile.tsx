@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect } from "react"
 import { useAuth } from "@/hooks/use-auth"
-import { User, LogOut, Loader2 } from "lucide-react"
+import { User, LogOut, Loader2, History, CreditCard, Settings } from "lucide-react"
 import Link from "next/link"
 
 export function UserProfile() {
@@ -80,6 +80,26 @@ export function UserProfile() {
               {displayName}
             </p>
             <p className="text-xs text-slate-500 truncate">{email}</p>
+          </div>
+
+          {/* Navigation Links */}
+          <div className="py-1 border-b border-slate-200 dark:border-slate-800">
+            <Link
+              href="/history"
+              onClick={() => setIsOpen(false)}
+              className="w-full px-4 py-2 text-left text-sm text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 flex items-center gap-2"
+            >
+              <History className="w-4 h-4" />
+              履歴
+            </Link>
+            <Link
+              href="/billing"
+              onClick={() => setIsOpen(false)}
+              className="w-full px-4 py-2 text-left text-sm text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 flex items-center gap-2"
+            >
+              <CreditCard className="w-4 h-4" />
+              プラン・お支払い
+            </Link>
           </div>
 
           {/* Actions */}

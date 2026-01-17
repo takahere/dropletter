@@ -16,8 +16,11 @@ import {
   FileText,
   Clock,
   Share2,
+  UserCheck,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
+import { ShareDialog } from "./share-dialog"
+import { HumanReviewRequestCard } from "./human-review-request"
 
 // Types
 interface NGWord {
@@ -112,6 +115,7 @@ export function ReportView({ report, editable = false }: ReportViewProps) {
   )
   const [humanEdits, setHumanEdits] = useState<HumanEdit[]>(report.human_edits || [])
   const [isCopied, setIsCopied] = useState(false)
+  const [isShareDialogOpen, setIsShareDialogOpen] = useState(false)
 
   const toggleSection = (section: string) => {
     setExpandedSections((prev) => ({ ...prev, [section]: !prev[section] }))
@@ -318,6 +322,15 @@ export function ReportView({ report, editable = false }: ReportViewProps) {
           </div>
 
           <div className="flex items-center gap-2">
+            {editable && (
+              <button
+                onClick={() => setIsShareDialogOpen(true)}
+                className="flex items-center gap-2 px-3 py-2 text-sm bg-muted hover:bg-muted/80 rounded-lg transition-colors"
+              >
+                <Share2 className="w-4 h-4" />
+                共有リンクを作成
+              </button>
+            )}
             <button
               onClick={copyShareUrl}
               className={cn(
@@ -335,7 +348,7 @@ export function ReportView({ report, editable = false }: ReportViewProps) {
               ) : (
                 <>
                   <Share2 className="w-4 h-4" />
-                  共有
+                  URLをコピー
                 </>
               )}
             </button>
@@ -439,6 +452,9 @@ export function ReportView({ report, editable = false }: ReportViewProps) {
           )}
         </AnimatePresence>
       </div>
+
+      {/* 有人判定リクエスト */}
+      <HumanReviewRequestCard reportId={report.id} editable={editable} />
 
       {/* マスキング済みテキスト */}
       <div className="bg-card border rounded-xl overflow-hidden">
@@ -697,6 +713,13 @@ export function ReportView({ report, editable = false }: ReportViewProps) {
           </div>
         </div>
       )}
+
+      {/* 共有ダイアログ */}
+      <ShareDialog
+        reportId={report.id}
+        isOpen={isShareDialogOpen}
+        onClose={() => setIsShareDialogOpen(false)}
+      />
     </div>
   )
 }

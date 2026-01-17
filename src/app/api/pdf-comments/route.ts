@@ -16,13 +16,10 @@ export async function GET(request: NextRequest) {
 
     const supabase = await createClient()
 
-    // Get all comments for this report (including nested replies)
+    // Get all comments for this report
     const { data: comments, error } = await supabase
       .from('pdf_comments')
-      .select(`
-        *,
-        user:auth.users(email, raw_user_meta_data)
-      `)
+      .select('*')
       .eq('report_id', reportId)
       .order('created_at', { ascending: true })
 
@@ -35,12 +32,12 @@ export async function GET(request: NextRequest) {
     }
 
     // Organize comments into threads
-    const rootComments = comments?.filter(c => !c.parent_id) || []
-    const replies = comments?.filter(c => c.parent_id) || []
+    const rootComments = (comments || []).filter((c: { parent_id: string | null }) => !c.parent_id)
+    const replies = (comments || []).filter((c: { parent_id: string | null }) => c.parent_id)
 
-    const commentsWithReplies = rootComments.map(comment => ({
+    const commentsWithReplies = rootComments.map((comment: { id: string }) => ({
       ...comment,
-      replies: replies.filter(r => r.parent_id === comment.id),
+      replies: replies.filter((r: { parent_id: string }) => r.parent_id === comment.id),
     }))
 
     return NextResponse.json({
@@ -107,10 +104,7 @@ export async function POST(request: NextRequest) {
         content,
         parent_id: parent_id || null,
       })
-      .select(`
-        *,
-        user:auth.users(email, raw_user_meta_data)
-      `)
+      .select('*')
       .single()
 
     if (error) {
@@ -123,14 +117,18 @@ export async function POST(request: NextRequest) {
 
     // Log activity
     const serviceClient = createServiceClient()
-    await serviceClient.rpc('log_activity', {
-      p_user_id: user.id,
-      p_org_id: null,
-      p_action_type: 'comment.added',
-      p_target_type: 'comment',
-      p_target_id: comment.id,
-      p_metadata: { report_id, page_number, is_pin_comment: true },
-    })
+    try {
+      await serviceClient.rpc('log_activity', {
+        p_user_id: user.id,
+        p_org_id: null,
+        p_action_type: 'comment.added',
+        p_target_type: 'comment',
+        p_target_id: comment?.id,
+        p_metadata: { report_id, page_number, is_pin_comment: true },
+      })
+    } catch {
+      // RPC may not exist yet
+    }
 
     return NextResponse.json({
       success: true,
