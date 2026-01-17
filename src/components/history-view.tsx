@@ -6,16 +6,15 @@ import {
   FileText,
   Clock,
   Search,
-  Filter,
   ChevronDown,
   AlertTriangle,
   CheckCircle,
   Users,
   User,
   ExternalLink,
-  Loader2,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { HistoryViewSkeleton } from '@/components/ui/skeleton'
 
 interface HistoryViewProps {
   userId: string
@@ -252,9 +251,7 @@ export function HistoryView({ userId, organizations }: HistoryViewProps) {
 
       {/* Content */}
       {isLoading ? (
-        <div className="flex items-center justify-center py-16">
-          <Loader2 className="w-8 h-8 animate-spin text-muted-foreground" />
-        </div>
+        <HistoryViewSkeleton />
       ) : activeTab === 'reports' ? (
         /* Reports list */
         <div className="space-y-2">
@@ -268,14 +265,14 @@ export function HistoryView({ userId, organizations }: HistoryViewProps) {
               <Link
                 key={report.id}
                 href={`/share/${report.id}`}
-                className="flex items-center justify-between p-4 bg-card border rounded-lg hover:bg-muted/50 transition-colors group"
+                className="flex flex-col sm:flex-row sm:items-center justify-between p-4 bg-card border rounded-lg hover:bg-muted/50 transition-colors group gap-3"
               >
-                <div className="flex items-center gap-4">
-                  <div className="w-10 h-10 rounded-lg bg-muted flex items-center justify-center">
+                <div className="flex items-center gap-3 sm:gap-4 min-w-0">
+                  <div className="w-10 h-10 rounded-lg bg-muted flex items-center justify-center flex-shrink-0">
                     <FileText className="w-5 h-5 text-muted-foreground" />
                   </div>
-                  <div>
-                    <h3 className="font-medium group-hover:text-primary transition-colors">
+                  <div className="min-w-0">
+                    <h3 className="font-medium group-hover:text-primary transition-colors truncate">
                       {report.file_name}
                     </h3>
                     <p className="text-sm text-muted-foreground">
@@ -283,9 +280,9 @@ export function HistoryView({ userId, organizations }: HistoryViewProps) {
                     </p>
                   </div>
                 </div>
-                <div className="flex items-center gap-3">
+                <div className="flex items-center gap-3 pl-13 sm:pl-0">
                   <RiskBadge level={report.riskLevel} />
-                  <ExternalLink className="w-4 h-4 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />
+                  <ExternalLink className="w-4 h-4 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity hidden sm:block" />
                 </div>
               </Link>
             ))

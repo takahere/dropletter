@@ -21,6 +21,7 @@ import {
 import { cn } from "@/lib/utils"
 import { ShareDialog } from "./share-dialog"
 import { HumanReviewRequestCard } from "./human-review-request"
+import { ReportViewSkeleton } from "@/components/ui/skeleton"
 
 // Types
 interface NGWord {
@@ -285,20 +286,21 @@ export function ReportView({ report, editable = false }: ReportViewProps) {
     )
   }
 
-  // 処理中の場合はローディング表示
+  // 処理中の場合はスケルトン表示
   if (isProcessing) {
     return (
       <div className="space-y-6">
-        <div className="bg-card border rounded-xl p-6">
-          <h2 className="text-2xl font-bold mb-4">{report.file_name}</h2>
-          <div className="flex items-center gap-3 text-muted-foreground">
+        <div className="bg-card border rounded-xl p-4 sm:p-6">
+          <h2 className="text-xl sm:text-2xl font-bold mb-4">{report.file_name}</h2>
+          <div className="flex items-center gap-3 text-muted-foreground mb-4">
             <div className="w-5 h-5 border-2 border-[#FF3300] border-t-transparent rounded-full animate-spin" />
             <span>処理中...</span>
           </div>
-          <p className="text-sm text-muted-foreground mt-4">
+          <p className="text-sm text-muted-foreground mb-6">
             ドキュメントを解析しています。しばらくお待ちください。
           </p>
         </div>
+        <ReportViewSkeleton />
       </div>
     )
   }
@@ -306,11 +308,11 @@ export function ReportView({ report, editable = false }: ReportViewProps) {
   return (
     <div className="space-y-6">
       {/* ヘッダー情報 */}
-      <div className="bg-card border rounded-xl p-6">
-        <div className="flex items-start justify-between mb-4">
-          <div>
-            <h2 className="text-2xl font-bold">{report.file_name}</h2>
-            <div className="flex items-center gap-4 mt-2 text-sm text-muted-foreground">
+      <div className="bg-card border rounded-xl p-4 sm:p-6">
+        <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4 mb-4">
+          <div className="min-w-0">
+            <h2 className="text-xl sm:text-2xl font-bold truncate">{report.file_name}</h2>
+            <div className="flex flex-wrap items-center gap-2 sm:gap-4 mt-2 text-sm text-muted-foreground">
               <span className="flex items-center gap-1">
                 <Clock className="w-4 h-4" />
                 {new Date(report.created_at).toLocaleString("ja-JP")}
@@ -321,14 +323,15 @@ export function ReportView({ report, editable = false }: ReportViewProps) {
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             {editable && (
               <button
                 onClick={() => setIsShareDialogOpen(true)}
                 className="flex items-center gap-2 px-3 py-2 text-sm bg-muted hover:bg-muted/80 rounded-lg transition-colors"
               >
                 <Share2 className="w-4 h-4" />
-                共有リンクを作成
+                <span className="hidden sm:inline">共有リンクを作成</span>
+                <span className="sm:hidden">共有</span>
               </button>
             )}
             <button
@@ -343,12 +346,12 @@ export function ReportView({ report, editable = false }: ReportViewProps) {
               {isCopied ? (
                 <>
                   <Check className="w-4 h-4" />
-                  コピーしました
+                  <span className="hidden sm:inline">コピーしました</span>
                 </>
               ) : (
                 <>
                   <Share2 className="w-4 h-4" />
-                  URLをコピー
+                  <span className="hidden sm:inline">URLをコピー</span>
                 </>
               )}
             </button>
@@ -362,7 +365,7 @@ export function ReportView({ report, editable = false }: ReportViewProps) {
                       className="flex items-center gap-2 px-3 py-2 text-sm bg-muted hover:bg-muted/80 rounded-lg transition-colors"
                     >
                       <X className="w-4 h-4" />
-                      キャンセル
+                      <span className="hidden sm:inline">キャンセル</span>
                     </button>
                     <button
                       onClick={handleSave}
@@ -378,7 +381,7 @@ export function ReportView({ report, editable = false }: ReportViewProps) {
                       ) : (
                         <Save className="w-4 h-4" />
                       )}
-                      保存
+                      <span className="hidden sm:inline">保存</span>
                     </button>
                   </>
                 ) : (
@@ -387,7 +390,7 @@ export function ReportView({ report, editable = false }: ReportViewProps) {
                     className="flex items-center gap-2 px-3 py-2 text-sm bg-muted hover:bg-muted/80 rounded-lg transition-colors"
                   >
                     <Edit2 className="w-4 h-4" />
-                    編集
+                    <span className="hidden sm:inline">編集</span>
                   </button>
                 )}
               </>
@@ -396,36 +399,36 @@ export function ReportView({ report, editable = false }: ReportViewProps) {
         </div>
 
         {/* サマリーカード */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          <div className="p-4 bg-muted/50 rounded-lg">
-            <p className="text-sm text-muted-foreground">リスクレベル</p>
-            <p className="text-2xl font-bold mt-1">
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
+          <div className="p-3 sm:p-4 bg-muted/50 rounded-lg">
+            <p className="text-xs sm:text-sm text-muted-foreground">リスクレベル</p>
+            <p className="text-lg sm:text-2xl font-bold mt-1">
               <RiskBadge level={result.deepReason?.legalJudgment?.riskLevel || "medium"} />
             </p>
           </div>
-          <div className="p-4 bg-muted/50 rounded-lg">
-            <p className="text-sm text-muted-foreground">コンプライアンス</p>
-            <p className="text-2xl font-bold mt-1">
+          <div className="p-3 sm:p-4 bg-muted/50 rounded-lg">
+            <p className="text-xs sm:text-sm text-muted-foreground">コンプライアンス</p>
+            <p className="text-lg sm:text-2xl font-bold mt-1">
               {result.deepReason?.legalJudgment?.isCompliant ? (
                 <span className="flex items-center gap-1 text-green-600">
-                  <Check className="w-5 h-5" /> 適合
+                  <Check className="w-4 h-4 sm:w-5 sm:h-5" /> 適合
                 </span>
               ) : (
                 <span className="flex items-center gap-1 text-red-500">
-                  <AlertTriangle className="w-5 h-5" /> 要確認
+                  <AlertTriangle className="w-4 h-4 sm:w-5 sm:h-5" /> 要確認
                 </span>
               )}
             </p>
           </div>
-          <div className="p-4 bg-muted/50 rounded-lg">
-            <p className="text-sm text-muted-foreground">NGワード</p>
-            <p className="text-2xl font-bold mt-1">
+          <div className="p-3 sm:p-4 bg-muted/50 rounded-lg">
+            <p className="text-xs sm:text-sm text-muted-foreground">NGワード</p>
+            <p className="text-lg sm:text-2xl font-bold mt-1">
               {editedNgWords.length}件
             </p>
           </div>
-          <div className="p-4 bg-muted/50 rounded-lg">
-            <p className="text-sm text-muted-foreground">個人情報検出</p>
-            <p className="text-2xl font-bold mt-1">
+          <div className="p-3 sm:p-4 bg-muted/50 rounded-lg">
+            <p className="text-xs sm:text-sm text-muted-foreground">個人情報検出</p>
+            <p className="text-lg sm:text-2xl font-bold mt-1">
               {result.masked?.statistics?.totalDetected || 0}件
             </p>
           </div>
@@ -527,11 +530,11 @@ export function ReportView({ report, editable = false }: ReportViewProps) {
                               className="w-full px-3 py-2 bg-background border rounded-lg text-sm"
                               placeholder="NGワード"
                             />
-                            <div className="flex gap-2">
+                            <div className="flex flex-col sm:flex-row gap-2">
                               <select
                                 value={ngWord.severity}
                                 onChange={(e) => updateNgWord(index, "severity", e.target.value)}
-                                className="px-3 py-2 bg-background border rounded-lg text-sm"
+                                className="px-3 py-2 bg-background border rounded-lg text-sm w-full sm:w-auto"
                               >
                                 <option value="low">低</option>
                                 <option value="medium">中</option>

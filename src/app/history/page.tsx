@@ -2,6 +2,7 @@ import { Metadata } from 'next'
 import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import { HistoryView } from '@/components/history-view'
+import type { OrganizationMembershipResult } from '@/types/database'
 
 export const metadata: Metadata = {
   title: '履歴 - DropLetter',
@@ -26,13 +27,12 @@ export default async function HistoryPage() {
 
     if (memberships) {
       for (const m of memberships) {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const org = m.organization as any
-        if (org && typeof org === 'object' && 'id' in org) {
+        const membership = m as unknown as OrganizationMembershipResult
+        if (membership.organization) {
           organizations.push({
-            id: org.id,
-            name: org.name,
-            slug: org.slug,
+            id: membership.organization.id,
+            name: membership.organization.name,
+            slug: membership.organization.slug,
           })
         }
       }

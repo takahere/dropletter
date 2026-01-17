@@ -139,8 +139,14 @@ async function handleSubscriptionChange(
                  subscription.status === 'canceled' ? 'canceled' : 'inactive'
 
   // Upsert subscription record
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const sub = subscription as any
+  // Stripe SDK types may not expose current_period_* directly, but they exist on the object
+  const periodStart = 'current_period_start' in subscription
+    ? (subscription.current_period_start as number)
+    : Math.floor(Date.now() / 1000)
+  const periodEnd = 'current_period_end' in subscription
+    ? (subscription.current_period_end as number)
+    : Math.floor(Date.now() / 1000) + 30 * 24 * 60 * 60
+
   await supabase
     .from('subscriptions')
     .upsert({
@@ -148,8 +154,8 @@ async function handleSubscriptionChange(
       stripe_subscription_id: subscription.id,
       stripe_price_id: subscription.items.data[0]?.price.id,
       status,
-      current_period_start: new Date(sub.current_period_start * 1000).toISOString(),
-      current_period_end: new Date(sub.current_period_end * 1000).toISOString(),
+      current_period_start: new Date(periodStart * 1000).toISOString(),
+      current_period_end: new Date(periodEnd * 1000).toISOString(),
       cancel_at_period_end: subscription.cancel_at_period_end,
     }, {
       onConflict: 'stripe_subscription_id',

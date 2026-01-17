@@ -202,7 +202,7 @@ export function ShareDialog({ reportId, isOpen, onClose }: ShareDialogProps) {
                   </button>
                 </div>
 
-                <div className="flex items-center gap-4 text-sm text-muted-foreground">
+                <div className="flex flex-wrap items-center gap-2 sm:gap-4 text-sm text-muted-foreground">
                   <span className="flex items-center gap-1">
                     {shareLink.require_auth ? (
                       <Lock className="w-4 h-4" />
@@ -217,7 +217,7 @@ export function ShareDialog({ reportId, isOpen, onClose }: ShareDialogProps) {
                   </span>
                 </div>
 
-                <div className="flex gap-2 pt-2">
+                <div className="flex flex-col sm:flex-row gap-2 pt-2">
                   <a
                     href={`/s/${shareLink.token}`}
                     target="_blank"
@@ -229,7 +229,7 @@ export function ShareDialog({ reportId, isOpen, onClose }: ShareDialogProps) {
                   </a>
                   <button
                     onClick={() => setShareLink(null)}
-                    className="flex-1 px-4 py-2 border hover:bg-muted rounded-lg transition-colors text-sm"
+                    className="flex-1 px-4 py-2 border hover:bg-muted rounded-lg transition-colors text-sm text-center"
                   >
                     新しいリンクを作成
                   </button>
@@ -275,13 +275,13 @@ export function ShareDialog({ reportId, isOpen, onClose }: ShareDialogProps) {
                     <Calendar className="w-4 h-4" />
                     有効期限
                   </label>
-                  <div className="flex gap-2">
+                  <div className="grid grid-cols-4 gap-2">
                     {[1, 7, 14, 30].map((days) => (
                       <button
                         key={days}
                         onClick={() => setExpirationDays(days)}
                         className={cn(
-                          "flex-1 px-3 py-2 text-sm rounded-lg transition-colors",
+                          "px-2 sm:px-3 py-2 text-sm rounded-lg transition-colors",
                           expirationDays === days
                             ? "bg-[#FF3300] text-white"
                             : "bg-muted hover:bg-muted/80"

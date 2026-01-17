@@ -298,6 +298,60 @@ export interface HumanReviewResponse {
 }
 
 // ============================================
+// SUPABASE QUERY RESULT TYPES
+// ============================================
+
+/**
+ * OrganizationMembersクエリ結果
+ * .select('organization:organizations(id, name, slug)')
+ */
+export interface OrganizationMembershipResult {
+  organization: {
+    id: string
+    name: string
+    slug: string
+  } | null
+}
+
+/**
+ * ShareLinkクエリ結果（レポート情報付き）
+ * .select('*, report:reports(id, file_name)')
+ */
+export interface ShareLinkWithReport {
+  id: string
+  created_at: string
+  report_id: string
+  created_by: string
+  token: string
+  expires_at: string
+  require_auth: boolean
+  view_count: number
+  report: {
+    id: string
+    file_name: string
+  } | null
+}
+
+/**
+ * Stripe Subscription 型（current_period_* 含む）
+ */
+export interface StripeSubscriptionData {
+  id: string
+  customer: string | { id: string }
+  status: string
+  current_period_start: number
+  current_period_end: number
+  cancel_at_period_end: boolean
+  items: {
+    data: Array<{
+      price: {
+        id: string
+      }
+    }>
+  }
+}
+
+// ============================================
 // API RESPONSE HELPERS
 // ============================================
 

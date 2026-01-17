@@ -7,12 +7,12 @@ import {
   CreditCard,
   Zap,
   Shield,
-  Users,
-  Loader2,
   ExternalLink,
   AlertCircle,
+  Loader2,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
+import { BillingViewSkeleton } from "@/components/ui/skeleton"
 
 interface BillingInfo {
   plan: 'free' | 'pro'
@@ -140,11 +140,7 @@ export function BillingView({ userId, email }: BillingViewProps) {
   }
 
   if (isLoading) {
-    return (
-      <div className="flex items-center justify-center py-16">
-        <Loader2 className="w-8 h-8 animate-spin text-muted-foreground" />
-      </div>
-    )
+    return <BillingViewSkeleton />
   }
 
   return (
@@ -214,12 +210,12 @@ export function BillingView({ userId, email }: BillingViewProps) {
         )}
 
         {/* Actions */}
-        <div className="mt-6 flex gap-3">
+        <div className="mt-6 flex flex-col sm:flex-row gap-3">
           {billingInfo?.plan === 'free' ? (
             <button
               onClick={handleUpgrade}
               disabled={isUpgrading}
-              className="flex items-center gap-2 px-6 py-3 bg-[#FF3300] text-white rounded-lg hover:bg-[#FF3300]/90 transition-colors disabled:opacity-50"
+              className="flex items-center justify-center gap-2 px-6 py-3 bg-[#FF3300] text-white rounded-lg hover:bg-[#FF3300]/90 transition-colors disabled:opacity-50 w-full sm:w-auto"
             >
               {isUpgrading ? (
                 <Loader2 className="w-5 h-5 animate-spin" />
@@ -232,14 +228,15 @@ export function BillingView({ userId, email }: BillingViewProps) {
             <button
               onClick={handleManageSubscription}
               disabled={isManaging}
-              className="flex items-center gap-2 px-6 py-3 bg-muted hover:bg-muted/80 rounded-lg transition-colors disabled:opacity-50"
+              className="flex items-center justify-center gap-2 px-6 py-3 bg-muted hover:bg-muted/80 rounded-lg transition-colors disabled:opacity-50 w-full sm:w-auto"
             >
               {isManaging ? (
                 <Loader2 className="w-5 h-5 animate-spin" />
               ) : (
                 <CreditCard className="w-5 h-5" />
               )}
-              サブスクリプションを管理
+              <span className="hidden sm:inline">サブスクリプションを管理</span>
+              <span className="sm:hidden">管理</span>
               <ExternalLink className="w-4 h-4" />
             </button>
           )}

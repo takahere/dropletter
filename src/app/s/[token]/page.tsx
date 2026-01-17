@@ -6,9 +6,22 @@ import { notFound } from 'next/navigation'
 import Link from 'next/link'
 import { ShareAuthGate } from '@/components/share-auth-gate'
 import { ShareExpired } from '@/components/share-expired'
+import type { ShareLinkWithReport } from '@/types/database'
 
 type Props = {
   params: Promise<{ token: string }>
+}
+
+// Helper function to safely extract report from share link query result
+function extractReport(shareLink: unknown): { id: string; file_name: string } | null {
+  if (!shareLink || typeof shareLink !== 'object') return null
+  const sl = shareLink as { report?: unknown }
+  if (!sl.report || typeof sl.report !== 'object' || Array.isArray(sl.report)) return null
+  const report = sl.report as { id?: string; file_name?: string }
+  if (typeof report.id === 'string' && typeof report.file_name === 'string') {
+    return { id: report.id, file_name: report.file_name }
+  }
+  return null
 }
 
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
@@ -22,9 +35,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
     .eq('token', token)
     .single()
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const reportData = shareLink?.report as any
-  const report = reportData && !Array.isArray(reportData) ? reportData as { id: string; file_name: string } : null
+  const report = extractReport(shareLink)
   const title = report
     ? `${report.file_name} - DropLetter解析結果`
     : 'DropLetter - ドキュメント解析結果'
@@ -95,8 +106,24 @@ export default async function ShareTokenPage({ params }: Props) {
     })
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const report = shareLink.report as any
+  // Extract report data - the Supabase query returns the full report
+  // Cast to the expected interface for ReportView
+  interface ShareLinkReportData {
+    id: string
+    file_name: string
+    file_path?: string
+    result_json: Record<string, unknown>
+    human_edits?: Array<{
+      field: string
+      original: string
+      edited: string
+      timestamp: string
+    }>
+    status: string
+    created_at: string
+    updated_at: string
+  }
+  const report = (shareLink as { report: ShareLinkReportData }).report
 
   // Calculate days remaining
   const daysRemaining = Math.ceil(
