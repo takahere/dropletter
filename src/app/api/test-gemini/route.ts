@@ -10,6 +10,7 @@ export const maxDuration = 60
  *
  * GET /api/test-gemini - Basic API test
  * GET /api/test-gemini?image=uploads/xxx.jpg - Test with specific image from Supabase
+ * GET /api/test-gemini?list=true - List files in uploads bucket
  */
 export async function GET(req: NextRequest) {
   try {
@@ -33,6 +34,32 @@ export async function GET(req: NextRequest) {
         error: "GEMINI_API_KEY is not set",
         envCheck,
       }, { status: 500 })
+    }
+
+    // List files in storage
+    const shouldList = req.nextUrl.searchParams.get("list")
+    if (shouldList) {
+      const supabase = createServiceClient()
+      const { data: files, error: listError } = await supabase.storage
+        .from("uploads")
+        .list("", { limit: 20, sortBy: { column: "created_at", order: "desc" } })
+
+      if (listError) {
+        return NextResponse.json({
+          success: false,
+          error: `List failed: ${listError.message}`,
+        }, { status: 500 })
+      }
+
+      return NextResponse.json({
+        success: true,
+        files: files.map(f => ({
+          name: f.name,
+          path: `uploads/${f.name}`,
+          size: f.metadata?.size,
+          createdAt: f.created_at,
+        })),
+      })
     }
 
     // Check if we should test with an image
