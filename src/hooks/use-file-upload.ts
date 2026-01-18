@@ -139,23 +139,27 @@ export function useFileUpload() {
       setIsUploading(true)
       const fileArray = Array.from(files)
 
-      // バリデーション - PDF、PNG、JPEGをサポート
+      // バリデーション - PDF、PNG、JPEG、WebP、GIFをサポート
       const validFiles = fileArray.filter((file) => {
         const isValid = file.type === "application/pdf" ||
                        file.name.endsWith(".pdf") ||
                        file.type.includes("pdf") ||
                        file.type === "image/png" ||
                        file.type === "image/jpeg" ||
+                       file.type === "image/webp" ||
+                       file.type === "image/gif" ||
                        file.name.endsWith(".png") ||
                        file.name.endsWith(".jpg") ||
-                       file.name.endsWith(".jpeg")
+                       file.name.endsWith(".jpeg") ||
+                       file.name.endsWith(".webp") ||
+                       file.name.endsWith(".gif")
         console.log("[useFileUpload] File:", file.name, "Type:", file.type, "Valid:", isValid)
         return isValid
       })
 
       if (validFiles.length === 0) {
         console.log("[useFileUpload] No valid files")
-        alert("PDF、PNG、JPEGファイルを選択してください")
+        alert("PDF、PNG、JPEG、WebP、GIFファイルを選択してください")
         setIsUploading(false)
         return
       }

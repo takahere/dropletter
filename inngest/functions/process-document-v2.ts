@@ -34,18 +34,23 @@ async function downloadFileFromStorage(storagePath: string): Promise<string> {
   const filePath = pathParts.join("/")
 
   console.log(`[Inngest] Downloading from storage: bucket=${bucket}, path=${filePath}`)
+  console.log(`[Inngest] Original storagePath: ${storagePath}`)
 
   const { data, error } = await supabase.storage
     .from(bucket)
     .download(filePath)
 
   if (error) {
+    console.error(`[Inngest] Storage download error:`, error)
     throw new Error(`Storage download failed: ${error.message}`)
   }
 
   if (!data) {
+    console.error(`[Inngest] Storage download returned no data`)
     throw new Error("Storage download returned no data")
   }
+
+  console.log(`[Inngest] Downloaded blob size: ${data.size}, type: ${data.type}`)
 
   // 一時ディレクトリに保存
   const uploadDir = path.join(tmpdir(), "dropletter-processing")
@@ -55,7 +60,7 @@ async function downloadFileFromStorage(storagePath: string): Promise<string> {
   const buffer = Buffer.from(await data.arrayBuffer())
   await writeFile(localPath, buffer)
 
-  console.log(`[Inngest] File downloaded to: ${localPath}`)
+  console.log(`[Inngest] File downloaded to: ${localPath}, size: ${buffer.length} bytes`)
   return localPath
 }
 

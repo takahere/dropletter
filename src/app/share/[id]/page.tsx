@@ -1,9 +1,25 @@
 import { Metadata } from "next"
+import dynamic from "next/dynamic"
 import { createClient } from "@/lib/supabase/server"
 import { ReportView } from "@/components/report-view"
 import { Footer } from "@/components/footer"
 import { notFound } from "next/navigation"
 import Link from "next/link"
+
+const ImagePreview = dynamic(
+  () => import("@/components/command-center/image-preview").then((mod) => mod.ImagePreview),
+  { ssr: false, loading: () => <div className="p-4 text-muted-foreground">画像を読み込み中...</div> }
+)
+
+const PdfViewerWithComments = dynamic(
+  () => import("@/components/command-center/pdf-viewer-with-comments").then((mod) => mod.PdfViewerWithComments),
+  { ssr: false, loading: () => <div className="p-4 text-muted-foreground">PDFを読み込み中...</div> }
+)
+
+function isImageFile(fileName: string): boolean {
+  const ext = fileName.toLowerCase().split(".").pop()
+  return ["png", "jpg", "jpeg", "webp", "gif"].includes(ext || "")
+}
 
 type Props = {
   params: Promise<{ id: string }>
@@ -83,6 +99,28 @@ export default async function SharePage({ params }: Props) {
       </header>
 
       <div className="max-w-4xl mx-auto px-6 py-8">
+        {/* ドキュメントプレビュー */}
+        <div className="mb-8 bg-card border rounded-xl overflow-hidden">
+          <div className="p-4 border-b">
+            <h2 className="text-lg font-semibold">ドキュメントプレビュー</h2>
+          </div>
+          <div className="p-4">
+            {isImageFile(report.file_name) ? (
+              <ImagePreview reportId={report.id} />
+            ) : (
+              <PdfViewerWithComments
+                reportId={report.id}
+                problems={{
+                  ngWords: report.result_json?.fastCheck?.ngWords || [],
+                  piiEntities: report.result_json?.masked?.detectedEntities || [],
+                  legalIssues: report.result_json?.deepReason?.legalJudgment?.issues || [],
+                }}
+                serverHighlights={report.result_json?.highlights}
+              />
+            )}
+          </div>
+        </div>
+
         <ReportView report={report} editable={true} />
       </div>
 

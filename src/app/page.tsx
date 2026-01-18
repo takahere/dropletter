@@ -28,9 +28,48 @@ export default function Home() {
   const files = useFileStore((state) => state.files)
   const clearCompleted = useFileStore((state) => state.clearCompleted)
   const clearAll = useFileStore((state) => state.clearAll)
-  const retryFile = useFileStore((state) => state.retryFile)
+  const updateFile = useFileStore((state) => state.updateFile)
 
   const [selectedFileId, setSelectedFileId] = useState<string | null>(null)
+
+  // リトライハンドラ - APIを呼び出して再処理をトリガー
+  const handleRetry = useCallback(async (fileId: string) => {
+    const file = files.find((f) => f.id === fileId)
+    if (!file?.reportId) {
+      console.error("[Retry] No reportId for file:", fileId)
+      return
+    }
+
+    // UIを即座に更新
+    updateFile(fileId, {
+      processingStatus: "pending",
+      progress: 0,
+      error: undefined,
+    })
+
+    try {
+      const response = await fetch(`/api/reports/${file.reportId}/retry`, {
+        method: "POST",
+      })
+      const result = await response.json()
+
+      if (!response.ok || !result.success) {
+        throw new Error(result.error || "リトライに失敗しました")
+      }
+
+      // 処理開始を反映
+      updateFile(fileId, {
+        processingStatus: "parsing",
+        progress: 10,
+      })
+    } catch (error) {
+      console.error("[Retry] Error:", error)
+      updateFile(fileId, {
+        processingStatus: "error",
+        error: error instanceof Error ? error.message : "リトライに失敗しました",
+      })
+    }
+  }, [files, updateFile])
 
   // ファイルカードへのスクロール用ref
   const mainContentRef = useRef<HTMLDivElement>(null)
@@ -220,7 +259,7 @@ export default function Home() {
               <FileResultCard
                 key={file.id}
                 file={file}
-                onRetry={() => retryFile(file.id)}
+                onRetry={() => handleRetry(file.id)}
               />
             ))}
           </div>

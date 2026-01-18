@@ -174,7 +174,11 @@ export async function runFastCheck(text: string): Promise<FastCheckResult> {
       processingTimeMs: Date.now() - startTime,
     }
   } catch (error) {
-    console.error("Fast check error:", error)
+    const errorMessage = error instanceof Error ? error.message : String(error)
+    console.error("[FastCheck] Error:", error)
+    console.error("[FastCheck] Error message:", errorMessage)
+    console.error("[FastCheck] Input text length:", text?.length)
+    // エラー時は空配列を返すが、ログには詳細を出力
     return {
       ngWords: [],
       processingTimeMs: Date.now() - startTime,
@@ -315,16 +319,23 @@ ${JSON.stringify(fastCheckResult.ngWords, null, 2)}
       summary: parsed.summary ?? "",
     }
   } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error)
     console.error("Deep reason error:", error)
+    console.error("Deep reason error message:", errorMessage)
     return {
       legalJudgment: {
         isCompliant: true,
         riskLevel: "none",
-        issues: [],
+        issues: [{
+          type: "解析エラー",
+          description: `法的判定中にエラーが発生しました: ${errorMessage}`,
+          location: "N/A",
+          suggestedFix: "しばらく待ってから再試行してください",
+        }],
       },
       modifications: [],
-      postalWorkerExplanation: "解析に失敗しました。",
-      summary: "エラーが発生しました。",
+      postalWorkerExplanation: `解析中にエラーが発生しました: ${errorMessage}`,
+      summary: `エラー: ${errorMessage.substring(0, 50)}`,
     }
   }
 }
@@ -551,31 +562,48 @@ export async function runImageVision(filePath: string): Promise<VisualParseResul
   try {
     const apiKey = process.env.GEMINI_API_KEY
     if (!apiKey) {
+      console.error("[ImageVision] GEMINI_API_KEY is not set")
       throw new Error("GEMINI_API_KEY is not set")
     }
 
     console.log("[ImageVision] Processing image with Gemini Flash:", filePath)
+    console.log("[ImageVision] GEMINI_API_KEY present:", !!apiKey, "length:", apiKey.length)
 
-    const buffer = await readFile(filePath)
+    // ファイル読み込み
+    let buffer: Buffer
+    try {
+      buffer = await readFile(filePath)
+      console.log("[ImageVision] File read successfully, size:", buffer.length, "bytes")
+    } catch (readError) {
+      console.error("[ImageVision] Failed to read file:", readError)
+      console.error("[ImageVision] File path attempted:", filePath)
+      throw new Error(`ファイルの読み込みに失敗しました: ${readError instanceof Error ? readError.message : "unknown error"}`)
+    }
+
     const base64 = buffer.toString("base64")
     const ext = path.extname(filePath)
     const mimeType = getMimeType(ext)
 
-    console.log("[ImageVision] Image loaded, size:", buffer.length, "bytes, type:", mimeType)
+    console.log("[ImageVision] Image loaded, size:", buffer.length, "bytes, type:", mimeType, "ext:", ext)
+    console.log("[ImageVision] Base64 length:", base64.length)
 
     const genai = new GoogleGenAI({ apiKey })
 
-    const response = await genai.models.generateContent({
-      model: "gemini-2.0-flash",
-      contents: [
-        {
-          inlineData: {
-            mimeType,
-            data: base64,
+    // Gemini API呼び出し
+    console.log("[ImageVision] Calling Gemini API with model: gemini-2.0-flash")
+    let response
+    try {
+      response = await genai.models.generateContent({
+        model: "gemini-2.0-flash",
+        contents: [
+          {
+            inlineData: {
+              mimeType,
+              data: base64,
+            },
           },
-        },
-        {
-          text: `この画像に含まれる全てのテキストを抽出してください。
+          {
+            text: `この画像に含まれる全てのテキストを抽出してください。
 
 出力形式:
 - Markdown形式で出力してください
@@ -583,9 +611,17 @@ export async function runImageVision(filePath: string): Promise<VisualParseResul
 - 表がある場合はMarkdownテーブル形式で出力してください
 - 読み取れない文字がある場合は [判読不能] と記載してください
 - テキスト以外の要素（ロゴ、写真など）は無視してください`,
-        },
-      ],
-    })
+          },
+        ],
+      })
+      console.log("[ImageVision] Gemini API response received successfully")
+    } catch (apiError) {
+      const errorMessage = apiError instanceof Error ? apiError.message : String(apiError)
+      console.error("[ImageVision] Gemini API error:", apiError)
+      console.error("[ImageVision] Gemini API error message:", errorMessage)
+      console.error("[ImageVision] Request details - mimeType:", mimeType, "base64 length:", base64.length)
+      throw new Error(`Gemini APIエラー: ${errorMessage}`)
+    }
 
     const markdown = response.text || ""
 
@@ -604,7 +640,7 @@ export async function runImageVision(filePath: string): Promise<VisualParseResul
       ],
     }
   } catch (error) {
-    console.error("Image vision error:", error)
+    console.error("[ImageVision] Error:", error)
     throw error
   }
 }

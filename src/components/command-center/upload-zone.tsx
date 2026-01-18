@@ -299,7 +299,7 @@ export function UploadZone({ compact = false }: UploadZoneProps) {
             {isDragging ? "ここにドロップ!" : "ファイルをドロップ"}
           </h3>
           <p className="text-sm text-muted-foreground">
-            クリックまたはドラッグ＆ドロップでファイルを選択（PDF/PNG/JPEG）
+            クリックまたはドラッグ＆ドロップでファイルを選択（PDF/PNG/JPEG/WebP）
           </p>
         </div>
         {isUploading && (
