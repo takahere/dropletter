@@ -172,63 +172,58 @@ export const processDocumentV2 = inngest.createFunction(
   async ({ event, step }) => {
     const { fileId, filePath, fileName, reportId } = event.data as DocumentProcessEventData
 
-    // Step 1: 処理開始 & ファイルダウンロード
-    const downloadResult = await step.run("start-processing", async () => {
-      console.log(`[Inngest Step1] Processing document: ${fileName}`)
-      console.log(`[Inngest Step1] Report ID: ${reportId}`)
-      console.log(`[Inngest Step1] File path: ${filePath}`)
-
-      await updateProgress(reportId, "parsing", 10)
-
-      // Supabase Storageからファイルをダウンロード
-      // filePath形式: "uploads/uuid.pdf" (新形式) or "/tmp/..." (旧形式)
-      let localFilePath: string
-      if (filePath.startsWith("uploads/") || filePath.startsWith("documents/")) {
-        // Supabase Storage形式
-        console.log(`[Inngest Step1] Downloading from Supabase Storage...`)
-        localFilePath = await downloadFileFromStorage(filePath)
-      } else {
-        // 旧形式（ローカルパス）- 互換性のため
-        console.log(`[Inngest Step1] Using local file path (legacy)`)
-        localFilePath = filePath
-      }
-
-      console.log(`[Inngest Step1] Local file ready: ${localFilePath}`)
-      return { status: "started", localFilePath }
-    })
-
-    const localFilePath = downloadResult.localFilePath
-
-    // Step 2: ドキュメントパイプライン実行
-    const pipelineResult = await step.run("run-pipeline", async () => {
+    // Step 1: ダウンロードと処理を同じステップで実行
+    // 重要: Vercelのサーバーレス関数では、ステップ間で/tmpディレクトリが保持されない可能性があるため、
+    // ファイルのダウンロードと処理を同じステップで行う
+    const pipelineResult = await step.run("process-document", async () => {
       let lastStatus = "parsing"
+      let localFilePath = ""
 
-      // デバッグ用ログ
-      console.log(`[Inngest] Starting pipeline for file: ${fileName}`)
-      console.log(`[Inngest] Local file path: ${localFilePath}`)
+      console.log(`[Inngest] Processing document: ${fileName}`)
+      console.log(`[Inngest] Report ID: ${reportId}`)
+      console.log(`[Inngest] File path: ${filePath}`)
       console.log(`[Inngest] GEMINI_API_KEY present: ${!!process.env.GEMINI_API_KEY}`)
       console.log(`[Inngest] GROQ_API_KEY present: ${!!process.env.GROQ_API_KEY}`)
       console.log(`[Inngest] ANTHROPIC_API_KEY present: ${!!process.env.ANTHROPIC_API_KEY}`)
 
-      // 進捗コールバック
-      const onStatusChange = async (status: string) => {
-        lastStatus = status
-        const progressMap: Record<string, number> = {
-          "visual-parse": 15,
-          "pii-masking": 30,
-          "fast-check": 45,
-          "pdf-highlight": 60,
-          "deep-reason": 80,
-          complete: 100,
-        }
-        const progress = progressMap[status] || 50
-
-        // 非同期で進捗更新（await しない）
-        updateProgress(reportId, status, progress).catch(console.error)
-      }
-
       try {
+        // 進捗更新
+        await updateProgress(reportId, "parsing", 10)
+
+        // Supabase Storageからファイルをダウンロード
+        if (filePath.startsWith("uploads/") || filePath.startsWith("documents/")) {
+          console.log(`[Inngest] Downloading from Supabase Storage...`)
+          localFilePath = await downloadFileFromStorage(filePath)
+        } else {
+          console.log(`[Inngest] Using local file path (legacy)`)
+          localFilePath = filePath
+        }
+
+        console.log(`[Inngest] Local file ready: ${localFilePath}`)
+
+        // 進捗コールバック
+        const onStatusChange = async (status: string) => {
+          lastStatus = status
+          const progressMap: Record<string, number> = {
+            "visual-parse": 15,
+            "pii-masking": 30,
+            "fast-check": 45,
+            "pdf-highlight": 60,
+            "deep-reason": 80,
+            complete: 100,
+          }
+          const progress = progressMap[status] || 50
+          updateProgress(reportId, status, progress).catch(console.error)
+        }
+
+        // パイプライン実行
         const result = await runDocumentPipeline(localFilePath, onStatusChange)
+
+        // 一時ファイルのクリーンアップ
+        if (filePath.startsWith("uploads/") || filePath.startsWith("documents/")) {
+          await cleanupTempFile(localFilePath)
+        }
+
         return {
           success: true,
           parsed: result.parsed,
@@ -245,7 +240,14 @@ export const processDocumentV2 = inngest.createFunction(
           message: errorMessage,
           stack: errorStack,
           lastStatus,
+          localFilePath,
         })
+
+        // クリーンアップを試みる
+        if (localFilePath && (filePath.startsWith("uploads/") || filePath.startsWith("documents/"))) {
+          await cleanupTempFile(localFilePath).catch(() => {})
+        }
+
         return {
           success: false,
           error: errorMessage,
@@ -253,7 +255,7 @@ export const processDocumentV2 = inngest.createFunction(
       }
     })
 
-    // Step 3: 結果を保存
+    // Step 2: 結果を保存
     await step.run("save-results", async () => {
       if (!pipelineResult.success) {
         const errorResult = pipelineResult as { success: false; error: string }
@@ -282,15 +284,6 @@ export const processDocumentV2 = inngest.createFunction(
       })
 
       return { success: true }
-    })
-
-    // Step 4: 一時ファイルのクリーンアップ
-    await step.run("cleanup", async () => {
-      // Storage形式の場合のみクリーンアップ
-      if (filePath.startsWith("uploads/") || filePath.startsWith("documents/")) {
-        await cleanupTempFile(localFilePath)
-      }
-      return { cleaned: true }
     })
 
     // 結果のサマリーを返す
