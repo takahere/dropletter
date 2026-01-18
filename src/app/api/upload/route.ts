@@ -50,6 +50,8 @@ export async function POST(req: NextRequest) {
       "image/png",
       "image/jpeg",
       "image/jpg",
+      "image/webp",
+      "image/gif",
     ]
 
     if (!allowedTypes.includes(file.type)) {

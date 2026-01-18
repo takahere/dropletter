@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import { createClient } from "@/lib/supabase/server"
-import { getAllGuidelines, getGuidelineById } from "@/lib/legal-guidelines"
+import { shinshoGuidelineInfo } from "@/lib/legal-guidelines"
 import crypto from "crypto"
 
 interface ClearReportCheck {
@@ -54,105 +54,40 @@ export async function GET(
 
     const resultJson = report.result_json || {}
     const deepReason = resultJson.deepReason || {}
-    const legalJudgment = deepReason.legalJudgment || {}
-    const fastCheck = resultJson.fastCheck || {}
+    const shinshoJudgment = deepReason.shinshoJudgment || {}
     const masked = resultJson.masked || {}
 
-    // チェック結果を生成
+    // チェック結果を生成（信書判定に特化）
     const checks: ClearReportCheck[] = []
-    const guidelines = getAllGuidelines()
 
-    // 1. 個人情報保護法チェック
-    const piiGuideline = getGuidelineById("kojinjouhou")
-    const piiCount = masked.statistics?.totalDetected || 0
-    checks.push({
-      category: "個人情報保護法",
-      status: piiCount === 0 ? "pass" : piiCount <= 3 ? "warning" : "fail",
-      details: piiCount === 0
-        ? "個人情報は検出されませんでした"
-        : `${piiCount}件の個人情報が検出されました`,
-      guideline: piiGuideline ? {
-        name: piiGuideline.name,
-        url: piiGuideline.url,
-        statute: piiGuideline.statute,
-        authority: piiGuideline.authority,
-      } : undefined,
-    })
+    // 1. 信書判定（メインチェック）
+    const isShinsho = shinshoJudgment.isShinsho ?? false
+    const confidence = shinshoJudgment.confidence || "low"
+    const documentType = shinshoJudgment.documentType || "不明"
+    const reason = shinshoJudgment.reason || "判定理由なし"
 
-    // 2. NGワードチェック
-    const ngWords = fastCheck.ngWords || []
-    const ngWordCount = ngWords.length
-    checks.push({
-      category: "禁止表現",
-      status: ngWordCount === 0 ? "pass" : ngWordCount <= 2 ? "warning" : "fail",
-      details: ngWordCount === 0
-        ? "禁止表現は検出されませんでした"
-        : `${ngWordCount}件の禁止表現が検出されました: ${ngWords.map((w: { word: string }) => w.word).join(", ")}`,
-    })
-
-    // 3. 景品表示法チェック
-    const keihinhyoGuideline = getGuidelineById("keihinhyo")
-    const hasAdvertisingIssue = legalJudgment.issues?.some(
-      (issue: { type: string }) =>
-        issue.type.includes("誇大") ||
-        issue.type.includes("優良誤認") ||
-        issue.type.includes("有利誤認") ||
-        issue.type.includes("景表法")
-    )
-    checks.push({
-      category: "景品表示法",
-      status: hasAdvertisingIssue ? "fail" : "pass",
-      details: hasAdvertisingIssue
-        ? "不当表示の疑いがあります"
-        : "不当表示は検出されませんでした",
-      guideline: keihinhyoGuideline ? {
-        name: keihinhyoGuideline.name,
-        url: keihinhyoGuideline.url,
-        statute: keihinhyoGuideline.statute,
-        authority: keihinhyoGuideline.authority,
-      } : undefined,
-    })
-
-    // 4. 特定商取引法チェック
-    const tokushohoGuideline = getGuidelineById("tokushoho")
-    const hasCommercialIssue = legalJudgment.issues?.some(
-      (issue: { type: string }) =>
-        issue.type.includes("特商法") ||
-        issue.type.includes("通信販売") ||
-        issue.type.includes("クーリングオフ")
-    )
-    checks.push({
-      category: "特定商取引法",
-      status: hasCommercialIssue ? "warning" : "pass",
-      details: hasCommercialIssue
-        ? "特定商取引法に関する問題の可能性があります"
-        : "特定商取引法に関する問題は検出されませんでした",
-      guideline: tokushohoGuideline ? {
-        name: tokushohoGuideline.name,
-        url: tokushohoGuideline.url,
-        statute: tokushohoGuideline.statute,
-        authority: tokushohoGuideline.authority,
-      } : undefined,
-    })
-
-    // 5. 信書判定
-    const shinshoGuideline = getGuidelineById("shinsho")
-    const hasShinshoIssue = legalJudgment.issues?.some(
-      (issue: { type: string }) =>
-        issue.type.includes("信書") || issue.type.includes("郵便法")
-    )
     checks.push({
       category: "信書判定",
-      status: hasShinshoIssue ? "warning" : "pass",
-      details: hasShinshoIssue
-        ? "信書に該当する可能性があります"
-        : "信書の判定基準に該当しません",
-      guideline: shinshoGuideline ? {
-        name: shinshoGuideline.name,
-        url: shinshoGuideline.url,
-        statute: shinshoGuideline.statute,
-        authority: shinshoGuideline.authority,
-      } : undefined,
+      status: isShinsho ? (confidence === "high" ? "fail" : "warning") : "pass",
+      details: isShinsho
+        ? `信書に該当します（確信度: ${confidence}）。文書種類: ${documentType}。${reason}`
+        : `信書に該当しません。文書種類: ${documentType}。${reason}`,
+      guideline: {
+        name: shinshoGuidelineInfo.name,
+        url: shinshoGuidelineInfo.url,
+        statute: shinshoGuidelineInfo.statute,
+        authority: shinshoGuidelineInfo.authority,
+      },
+    })
+
+    // 2. 個人情報検出状況（参考情報）
+    const piiCount = masked.statistics?.totalDetected || 0
+    checks.push({
+      category: "個人情報検出",
+      status: piiCount === 0 ? "pass" : "warning",
+      details: piiCount === 0
+        ? "個人情報は検出されませんでした"
+        : `${piiCount}件の個人情報が検出されました（マスキング済み）`,
     })
 
     // 総合ステータスを判定

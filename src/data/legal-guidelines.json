@@ -5,9 +5,10 @@
       "name": "信書の定義",
       "authority": "総務省",
       "url": "https://www.soumu.go.jp/yusei/shinsho_guide.html",
-      "statute": "郵便法第4条",
-      "description": "信書に該当する/しない文書の判断基準",
-      "keywords": ["信書", "郵便法", "特定の受取人", "意思表示", "通知"]
+      "statute": "郵便法第4条第2項、信書便法第2条第1項",
+      "description": "信書に該当する/しない文書の判断基準（詳細はMarkdownガイドラインを参照）",
+      "keywords": ["信書", "郵便法", "特定の受取人", "意思表示", "通知", "ダイレクトメール", "添え状", "送り状"],
+      "guidelinesPath": "src/data/shinsho-guidelines/"
     },
     {
       "id": "tokushoho",
