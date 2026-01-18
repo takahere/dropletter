@@ -174,6 +174,10 @@ export const processDocumentV2 = inngest.createFunction(
 
     // Step 1: 処理開始 & ファイルダウンロード
     const downloadResult = await step.run("start-processing", async () => {
+      console.log(`[Inngest Step1] Processing document: ${fileName}`)
+      console.log(`[Inngest Step1] Report ID: ${reportId}`)
+      console.log(`[Inngest Step1] File path: ${filePath}`)
+
       await updateProgress(reportId, "parsing", 10)
 
       // Supabase Storageからファイルをダウンロード
@@ -181,12 +185,15 @@ export const processDocumentV2 = inngest.createFunction(
       let localFilePath: string
       if (filePath.startsWith("uploads/") || filePath.startsWith("documents/")) {
         // Supabase Storage形式
+        console.log(`[Inngest Step1] Downloading from Supabase Storage...`)
         localFilePath = await downloadFileFromStorage(filePath)
       } else {
         // 旧形式（ローカルパス）- 互換性のため
+        console.log(`[Inngest Step1] Using local file path (legacy)`)
         localFilePath = filePath
       }
 
+      console.log(`[Inngest Step1] Local file ready: ${localFilePath}`)
       return { status: "started", localFilePath }
     })
 
