@@ -41,6 +41,39 @@ const PdfViewerWithComments = dynamic(
   }
 )
 
+// ImagePreview を動的インポート（SSR無効）
+const ImagePreview = dynamic(
+  () => import("./image-preview").then((mod) => mod.ImagePreview),
+  {
+    ssr: false,
+    loading: () => (
+      <div className="flex flex-col items-center justify-center py-16 bg-gradient-to-b from-slate-50 to-slate-100 dark:from-slate-900 dark:to-slate-950 rounded-2xl">
+        <div className="w-16 h-16 rounded-2xl bg-white dark:bg-slate-800 shadow-lg flex items-center justify-center mb-4">
+          <Loader2 className="w-8 h-8 text-blue-500 animate-spin" />
+        </div>
+        <p className="text-sm font-medium text-slate-500 dark:text-slate-400">
+          画像を読み込み中...
+        </p>
+      </div>
+    ),
+  }
+)
+
+// 画像ファイルかどうかを判定
+function isImageFile(fileName: string, fileType?: string): boolean {
+  const imageExtensions = [".png", ".jpg", ".jpeg", ".webp", ".gif"]
+  const imageTypes = ["image/png", "image/jpeg", "image/jpg", "image/webp", "image/gif"]
+
+  const ext = fileName.toLowerCase().split(".").pop()
+  if (ext && imageExtensions.includes(`.${ext}`)) {
+    return true
+  }
+  if (fileType && imageTypes.includes(fileType)) {
+    return true
+  }
+  return false
+}
+
 
 interface FileResultCardProps {
   file: FileState
@@ -323,6 +356,14 @@ export const FileResultCard = forwardRef<HTMLDivElement, FileResultCardProps>(
                 <div>
                   {file.reportId ? (
                     (() => {
+                      // 画像ファイルの場合は ImagePreview を使用
+                      if (isImageFile(file.fileName, file.fileType)) {
+                        return (
+                          <ImagePreview reportId={file.reportId} />
+                        )
+                      }
+
+                      // PDFファイルの場合は PdfViewerWithComments を使用
                       const problems = {
                         ngWords: report?.result_json?.fastCheck?.ngWords || [],
                         piiEntities: report?.result_json?.masked?.detectedEntities || [],
