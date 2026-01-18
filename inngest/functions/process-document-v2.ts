@@ -143,11 +143,28 @@ export const processDocumentV2 = inngest.createFunction(
       // 元のイベントデータにアクセスする
       const originalEvent = (event as unknown as { data: { event?: { data?: DocumentProcessEventData } } })
       const eventData = originalEvent?.data?.event?.data
+
+      // 詳細なエラー情報をログ出力
+      console.error("[Inngest onFailure] Error occurred:", {
+        message: error?.message,
+        name: error?.name,
+        stack: error?.stack,
+        fileName: eventData?.fileName,
+        filePath: eventData?.filePath,
+      })
+
+      // エラーメッセージを構築
+      let errorMessage = "処理中にエラーが発生しました"
+      if (error?.message) {
+        errorMessage = error.message
+        // Gemini APIエラーの詳細を含める
+        if (error.message.includes("Gemini")) {
+          errorMessage = `画像処理エラー: ${error.message}`
+        }
+      }
+
       if (eventData?.reportId) {
-        await failProcessing(
-          eventData.reportId,
-          error?.message || "処理中にエラーが発生しました"
-        )
+        await failProcessing(eventData.reportId, errorMessage)
       }
     },
   },
@@ -179,6 +196,13 @@ export const processDocumentV2 = inngest.createFunction(
     const pipelineResult = await step.run("run-pipeline", async () => {
       let lastStatus = "parsing"
 
+      // デバッグ用ログ
+      console.log(`[Inngest] Starting pipeline for file: ${fileName}`)
+      console.log(`[Inngest] Local file path: ${localFilePath}`)
+      console.log(`[Inngest] GEMINI_API_KEY present: ${!!process.env.GEMINI_API_KEY}`)
+      console.log(`[Inngest] GROQ_API_KEY present: ${!!process.env.GROQ_API_KEY}`)
+      console.log(`[Inngest] ANTHROPIC_API_KEY present: ${!!process.env.ANTHROPIC_API_KEY}`)
+
       // 進捗コールバック
       const onStatusChange = async (status: string) => {
         lastStatus = status
@@ -208,9 +232,16 @@ export const processDocumentV2 = inngest.createFunction(
           totalProcessingTime: result.totalProcessingTime,
         }
       } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : String(error)
+        const errorStack = error instanceof Error ? error.stack : undefined
+        console.error(`[Inngest] Pipeline error for ${fileName}:`, {
+          message: errorMessage,
+          stack: errorStack,
+          lastStatus,
+        })
         return {
           success: false,
-          error: error instanceof Error ? error.message : "処理エラー",
+          error: errorMessage,
         }
       }
     })
