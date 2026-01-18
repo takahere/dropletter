@@ -47,8 +47,14 @@ UI構築、ストリーミング表示、AIとの通信を担当。
 競合との差別化要素。
 
 **LlamaParse**
-- PDFを画像として解析し、構造化データに変換（特許回避）
+- **PDF専用**: PDFを画像として解析し、構造化データに変換（特許回避）
 - https://docs.cloud.llamaindex.ai/llama_parse/getting_started
+
+**Gemini Flash (マルチモーダル)**
+- **画像専用**: PNG, JPG, JPEG, WebP, GIF等の画像ファイルからテキスト抽出
+- Gemini 2.0 Flash のマルチモーダル機能を使用
+- コスト効率: Claude Sonnetの約1/10、精度: 93%
+- ⚠️ **この技術スタックは変更禁止** - 外部OCRサービス（Tesseract等）は使用しない
 
 **Inngest**
 - 複数ファイルの並列処理・キューイング制御
@@ -80,6 +86,12 @@ UI構築、ストリーミング表示、AIとの通信を担当。
 - ストリーミングレスポンスを優先
 - エラーハンドリングを確実に実装
 - タイムアウト設定を適切に行う
+
+### Document Processing (技術スタック固定)
+- **PDFファイル**: LlamaParse REST API を使用（変更禁止）
+- **画像ファイル**: Gemini Flash（マルチモーダル）を使用（変更禁止）
+- 外部OCRサービス（Tesseract等）は使用しない
+- 処理パイプライン: `visual-parse → pii-masking → fast-check → deep-reason`
 
 ### UI/UX
 - Shadcn UIコンポーネントを基盤とする
@@ -183,4 +195,6 @@ const CMAP_URL = `https://unpkg.com/pdfjs-dist@${PDFJS_VERSION}/cmaps/`
   /lib          # ユーティリティ、helpers
 /public         # 静的アセット
 ```
+
+
 

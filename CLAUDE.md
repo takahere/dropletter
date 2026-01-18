@@ -56,9 +56,10 @@ Inngest UI (http://localhost:8288) でジョブ状況を確認可能。
 ## 環境変数
 
 必須の環境変数（`.env.local`）:
-- `ANTHROPIC_API_KEY`
-- `GROQ_API_KEY`
-- `LLAMA_CLOUD_API_KEY`
+- `ANTHROPIC_API_KEY` - Claude API（PII検出、法的判定）
+- `GEMINI_API_KEY` - Gemini Flash（画像マルチモーダル処理）
+- `GROQ_API_KEY` - Groq/Llama 3（高速NGワード検出）
+- `LLAMA_CLOUD_API_KEY` - LlamaParse（PDF解析）
 - `NEXT_PUBLIC_SUPABASE_URL`
 - `NEXT_PUBLIC_SUPABASE_ANON_KEY`
 - `SUPABASE_SERVICE_ROLE_KEY`

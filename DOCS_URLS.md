@@ -102,3 +102,5 @@ https://microsoft.github.io/presidio/
 - 使用しているAPIの仕様変更時
 - 新しいライブラリを追加する時
 
+
+
