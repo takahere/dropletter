@@ -264,79 +264,128 @@ const DEEP_REASON_PROMPT_TEMPLATE = `あなたは信書判定の専門家です�
 必ず有効なJSONのみを出力してください。`
 
 /**
+ * Sleep helper for retry delays
+ */
+function sleepMs(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms))
+}
+
+/**
  * Run the deep-reason agent using Claude
  * Performs detailed legal judgment and generates modification suggestions
+ * Includes retry logic for rate limit errors (429)
  */
 export async function runDeepReason(
   text: string,
   fastCheckResult?: FastCheckResult
 ): Promise<DeepReasonResult> {
-  try {
-    const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
+  const MAX_RETRIES = 3
+  const BASE_DELAY_MS = 30000 // 30 seconds base delay for rate limits
+  const MAX_TEXT_LENGTH = 15000 // Limit text to ~15k chars to stay under token limits
 
-    // Load shinsho guidelines from markdown files
-    console.log("[DeepReason] Loading shinsho guidelines...")
-    const shinshoGuidelines = await getShinshoGuidelineForPrompt(false)
-    console.log("[DeepReason] Shinsho guidelines loaded, length:", shinshoGuidelines.length)
+  // Truncate text if too long to avoid rate limits
+  const truncatedText = text.length > MAX_TEXT_LENGTH
+    ? text.substring(0, MAX_TEXT_LENGTH) + "\n\n...(テキストが長すぎるため省略されました)"
+    : text
 
-    // Build context from fast check results
-    let fastCheckContext = ""
-    if (fastCheckResult) {
-      fastCheckContext = `
+  if (text.length > MAX_TEXT_LENGTH) {
+    console.log(`[DeepReason] Text truncated from ${text.length} to ${MAX_TEXT_LENGTH} chars`)
+  }
+
+  for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+    try {
+      const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
+
+      // Load shinsho guidelines from markdown files
+      console.log("[DeepReason] Loading shinsho guidelines...")
+      const shinshoGuidelines = await getShinshoGuidelineForPrompt(false)
+      console.log("[DeepReason] Shinsho guidelines loaded, length:", shinshoGuidelines.length)
+
+      // Build context from fast check results
+      let fastCheckContext = ""
+      if (fastCheckResult) {
+        fastCheckContext = `
 ## Fast Check Results (Pre-analysis):
 ${JSON.stringify(fastCheckResult.ngWords, null, 2)}
 `
+      }
+
+      const prompt = DEEP_REASON_PROMPT_TEMPLATE
+        .replace("{text}", truncatedText)
+        .replace("{fast_check_context}", fastCheckContext)
+        .replace("{shinsho_guidelines}", shinshoGuidelines)
+
+      console.log(`[DeepReason] Attempt ${attempt}/${MAX_RETRIES}, prompt length: ${prompt.length} chars`)
+
+      const response = await anthropic.messages.create({
+        model: "claude-sonnet-4-20250514",
+        max_tokens: 4096,
+        messages: [{ role: "user", content: prompt }],
+      })
+
+      const content = response.content[0].type === "text" ? response.content[0].text : ""
+
+      // Extract JSON from response (handle markdown code blocks)
+      const jsonMatch = content.match(/```json\s*([\s\S]*?)\s*```/)
+      const jsonStr = jsonMatch ? jsonMatch[1] : content
+
+      const parsed = JSON.parse(jsonStr)
+
+      return {
+        legalJudgment: {
+          isCompliant: parsed.legalJudgment?.isCompliant ?? true,
+          riskLevel: parsed.legalJudgment?.riskLevel ?? "none",
+          issues: parsed.legalJudgment?.issues ?? [],
+        },
+        modifications: parsed.modifications ?? [],
+        shinshoJudgment: parsed.shinshoJudgment,
+        postalWorkerExplanation: parsed.postalWorkerExplanation ?? "解析に失敗しました。",
+        summary: parsed.summary ?? "",
+      }
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error)
+      console.error(`[DeepReason] Attempt ${attempt} error:`, errorMessage)
+
+      // Check if it's a rate limit error (429)
+      const isRateLimitError = errorMessage.includes("429") || errorMessage.includes("rate_limit")
+
+      if (isRateLimitError && attempt < MAX_RETRIES) {
+        const delayMs = BASE_DELAY_MS * attempt // 30s, 60s, 90s
+        console.log(`[DeepReason] Rate limit hit. Waiting ${delayMs / 1000}s before retry...`)
+        await sleepMs(delayMs)
+        continue
+      }
+
+      // If not a rate limit error or max retries reached, return error result
+      console.error("Deep reason error:", error)
+      return {
+        legalJudgment: {
+          isCompliant: true,
+          riskLevel: "none",
+          issues: [{
+            type: "解析エラー",
+            description: `法的判定中にエラーが発生しました: ${errorMessage}`,
+            location: "N/A",
+            suggestedFix: "しばらく待ってから再試行してください",
+          }],
+        },
+        modifications: [],
+        postalWorkerExplanation: `解析中にエラーが発生しました: ${errorMessage}`,
+        summary: `エラー: ${errorMessage.substring(0, 50)}`,
+      }
     }
+  }
 
-    const prompt = DEEP_REASON_PROMPT_TEMPLATE
-      .replace("{text}", text)
-      .replace("{fast_check_context}", fastCheckContext)
-      .replace("{shinsho_guidelines}", shinshoGuidelines)
-
-    const response = await anthropic.messages.create({
-      model: "claude-sonnet-4-20250514",
-      max_tokens: 4096,
-      messages: [{ role: "user", content: prompt }],
-    })
-
-    const content = response.content[0].type === "text" ? response.content[0].text : ""
-
-    // Extract JSON from response (handle markdown code blocks)
-    const jsonMatch = content.match(/```json\s*([\s\S]*?)\s*```/)
-    const jsonStr = jsonMatch ? jsonMatch[1] : content
-
-    const parsed = JSON.parse(jsonStr)
-
-    return {
-      legalJudgment: {
-        isCompliant: parsed.legalJudgment?.isCompliant ?? true,
-        riskLevel: parsed.legalJudgment?.riskLevel ?? "none",
-        issues: parsed.legalJudgment?.issues ?? [],
-      },
-      modifications: parsed.modifications ?? [],
-      shinshoJudgment: parsed.shinshoJudgment,
-      postalWorkerExplanation: parsed.postalWorkerExplanation ?? "解析に失敗しました。",
-      summary: parsed.summary ?? "",
-    }
-  } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : String(error)
-    console.error("Deep reason error:", error)
-    console.error("Deep reason error message:", errorMessage)
-    return {
-      legalJudgment: {
-        isCompliant: true,
-        riskLevel: "none",
-        issues: [{
-          type: "解析エラー",
-          description: `法的判定中にエラーが発生しました: ${errorMessage}`,
-          location: "N/A",
-          suggestedFix: "しばらく待ってから再試行してください",
-        }],
-      },
-      modifications: [],
-      postalWorkerExplanation: `解析中にエラーが発生しました: ${errorMessage}`,
-      summary: `エラー: ${errorMessage.substring(0, 50)}`,
-    }
+  // Should not reach here, but just in case
+  return {
+    legalJudgment: {
+      isCompliant: true,
+      riskLevel: "none",
+      issues: [],
+    },
+    modifications: [],
+    postalWorkerExplanation: "解析に失敗しました。",
+    summary: "解析に失敗しました",
   }
 }
 
