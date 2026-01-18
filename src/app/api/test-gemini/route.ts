@@ -1,11 +1,15 @@
 import { NextRequest, NextResponse } from "next/server"
 import { GoogleGenAI } from "@google/genai"
+import { createServiceClient } from "@/lib/supabase/server"
 
 export const maxDuration = 60
 
 /**
  * Test endpoint for Gemini API connectivity
  * This helps debug image processing issues in Vercel environment
+ *
+ * GET /api/test-gemini - Basic API test
+ * GET /api/test-gemini?image=uploads/xxx.jpg - Test with specific image from Supabase
  */
 export async function GET(req: NextRequest) {
   try {
@@ -31,10 +35,90 @@ export async function GET(req: NextRequest) {
       }, { status: 500 })
     }
 
-    // Try to initialize Gemini client
-    const genai = new GoogleGenAI({ apiKey })
+    // Check if we should test with an image
+    const imagePath = req.nextUrl.searchParams.get("image")
+
+    if (imagePath) {
+      // Test with image from Supabase Storage
+      console.log("[Test] Testing with image:", imagePath)
+
+      // Download from Supabase
+      const [bucket, ...pathParts] = imagePath.split("/")
+      const filePath = pathParts.join("/")
+
+      console.log(`[Test] Downloading from bucket=${bucket}, path=${filePath}`)
+
+      const supabase = createServiceClient()
+      const { data, error: downloadError } = await supabase.storage
+        .from(bucket)
+        .download(filePath)
+
+      if (downloadError) {
+        return NextResponse.json({
+          success: false,
+          error: `Storage download failed: ${downloadError.message}`,
+          envCheck,
+        }, { status: 500 })
+      }
+
+      console.log(`[Test] Downloaded blob size: ${data.size}, type: ${data.type}`)
+
+      // Convert to base64
+      const buffer = Buffer.from(await data.arrayBuffer())
+      const base64 = buffer.toString("base64")
+
+      console.log(`[Test] Base64 length: ${base64.length}`)
+
+      // Determine MIME type from file extension
+      const ext = filePath.split(".").pop()?.toLowerCase() || ""
+      let mimeType = "image/jpeg"
+      if (ext === "png") mimeType = "image/png"
+      else if (ext === "webp") mimeType = "image/webp"
+      else if (ext === "gif") mimeType = "image/gif"
+
+      console.log(`[Test] MIME type: ${mimeType}`)
+
+      // Test Gemini with image
+      const genai = new GoogleGenAI({ apiKey })
+
+      console.log("[Test] Calling Gemini API with image...")
+      const response = await genai.models.generateContent({
+        model: "gemini-2.0-flash",
+        contents: [
+          {
+            inlineData: {
+              mimeType,
+              data: base64,
+            },
+          },
+          {
+            text: "この画像に含まれるテキストを抽出してください。Markdown形式で出力してください。",
+          },
+        ],
+      })
+
+      const result = response.text || ""
+      console.log(`[Test] Gemini response length: ${result.length}`)
+
+      return NextResponse.json({
+        success: true,
+        message: "Image processing test successful",
+        imageInfo: {
+          path: imagePath,
+          size: data.size,
+          type: data.type,
+          mimeType,
+          base64Length: base64.length,
+        },
+        responseLength: result.length,
+        responsePreview: result.substring(0, 500),
+        envCheck,
+      })
+    }
 
     // Simple text test (no image)
+    const genai = new GoogleGenAI({ apiKey })
+
     console.log("[Test] Testing Gemini API with simple text request...")
     const response = await genai.models.generateContent({
       model: "gemini-2.0-flash",
