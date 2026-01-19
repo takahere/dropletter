@@ -74,14 +74,14 @@ async function cleanupTempFile(localPath: string): Promise<void> {
   }
 }
 
-// 進捗状態を更新するヘルパー
+// 進捗状態を更新するヘルパー（エラーハンドリング付き）
 async function updateProgress(
   reportId: string,
   processingStatus: string,
   progress: number
-) {
+): Promise<boolean> {
   const supabase = createSupabaseAdmin()
-  await supabase
+  const { error } = await supabase
     .from("reports")
     .update({
       processing_status: processingStatus,
@@ -89,15 +89,23 @@ async function updateProgress(
       status: "processing",
     })
     .eq("id", reportId)
+
+  if (error) {
+    console.error("[Inngest] updateProgress failed:", error)
+    return false
+  }
+  return true
 }
 
-// 処理完了時のヘルパー
+// 処理完了時のヘルパー（activity_logs記録付き）
 async function completeProcessing(
   reportId: string,
   resultJson: Record<string, unknown>
 ) {
   const supabase = createSupabaseAdmin()
-  await supabase
+
+  // レポートを更新し、user_idを取得
+  const { data: report, error } = await supabase
     .from("reports")
     .update({
       processing_status: "complete",
@@ -106,6 +114,35 @@ async function completeProcessing(
       result_json: resultJson,
     })
     .eq("id", reportId)
+    .select("user_id, file_name")
+    .single()
+
+  if (error) {
+    console.error("[Inngest] completeProcessing failed:", error)
+    return
+  }
+
+  // アクティビティログに処理完了を記録（ユーザーがいる場合のみ）
+  if (report?.user_id) {
+    const deepReason = resultJson.deepReason as { legalJudgment?: { riskLevel?: string } } | undefined
+    await supabase
+      .from("activity_logs")
+      .insert({
+        user_id: report.user_id,
+        action_type: "report.completed",
+        target_type: "report",
+        target_id: reportId,
+        metadata: {
+          file_name: report.file_name,
+          risk_level: deepReason?.legalJudgment?.riskLevel || "unknown",
+        },
+      })
+      .then(({ error: logError }) => {
+        if (logError) {
+          console.error("[Inngest] activity_logs insert failed:", logError)
+        }
+      })
+  }
 }
 
 // エラー時のヘルパー
@@ -151,6 +188,8 @@ export const processDocumentV2 = inngest.createFunction(
         stack: error?.stack,
         fileName: eventData?.fileName,
         filePath: eventData?.filePath,
+        reportId: eventData?.reportId,
+        fileId: eventData?.fileId,
       })
 
       // エラーメッセージを構築
@@ -163,8 +202,27 @@ export const processDocumentV2 = inngest.createFunction(
         }
       }
 
+      // reportIdがある場合はそれを使用
       if (eventData?.reportId) {
         await failProcessing(eventData.reportId, errorMessage)
+      } else if (eventData?.fileId) {
+        // reportIdがなくてもfileIdでレポートを検索して更新
+        console.log("[Inngest onFailure] No reportId, searching by fileId:", eventData.fileId)
+        const supabase = createSupabaseAdmin()
+        const { data: report } = await supabase
+          .from("reports")
+          .select("id")
+          .eq("file_id", eventData.fileId)
+          .order("created_at", { ascending: false })
+          .limit(1)
+          .single()
+
+        if (report?.id) {
+          console.log("[Inngest onFailure] Found report by fileId:", report.id)
+          await failProcessing(report.id, errorMessage)
+        } else {
+          console.error("[Inngest onFailure] Could not find report for fileId:", eventData.fileId)
+        }
       }
     },
   },
@@ -201,7 +259,7 @@ export const processDocumentV2 = inngest.createFunction(
 
         console.log(`[Inngest] Local file ready: ${localFilePath}`)
 
-        // 進捗コールバック
+        // 進捗コールバック（リトライ付き）
         const onStatusChange = async (status: string) => {
           lastStatus = status
           const progressMap: Record<string, number> = {
@@ -212,7 +270,16 @@ export const processDocumentV2 = inngest.createFunction(
             complete: 100,
           }
           const progress = progressMap[status] || 50
-          updateProgress(reportId, status, progress).catch(console.error)
+
+          // リトライロジック（最大3回）
+          for (let attempt = 0; attempt < 3; attempt++) {
+            const success = await updateProgress(reportId, status, progress)
+            if (success) break
+            if (attempt < 2) {
+              console.log(`[Inngest] Retrying updateProgress (attempt ${attempt + 2})`)
+              await new Promise(r => setTimeout(r, 1000))
+            }
+          }
         }
 
         // パイプライン実行

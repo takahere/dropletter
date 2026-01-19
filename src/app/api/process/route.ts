@@ -48,6 +48,24 @@ export async function POST(req: NextRequest) {
       )
     }
 
+    // アクティビティログに記録（ログインユーザーの場合のみ）
+    if (user?.id) {
+      await supabase
+        .from("activity_logs")
+        .insert({
+          user_id: user.id,
+          action_type: "report.created",
+          target_type: "report",
+          target_id: report.id,
+          metadata: { file_name: fileName },
+        })
+        .then(({ error: logError }) => {
+          if (logError) {
+            console.error("[Process] activity_logs insert error:", logError)
+          }
+        })
+    }
+
     // Inngestイベントを発火
     await inngest.send({
       name: "document/process",

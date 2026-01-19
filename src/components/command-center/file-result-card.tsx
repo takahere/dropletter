@@ -130,7 +130,7 @@ interface Report {
 const statusLabels: Record<string, string> = {
   idle: "待機中",
   pending: "キュー待ち",
-  parsing: "PDF解析中",
+  parsing: "ファイルを解析中",
   masking: "個人情報マスキング中",
   "fast-check": "NGワードチェック中",
   "deep-reason": "法的判定中",

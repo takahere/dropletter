@@ -27,7 +27,7 @@ const statusConfig: Record<
 > = {
   idle: { icon: <FileText className="w-4 h-4" />, label: "待機中", color: "text-muted-foreground" },
   pending: { icon: <Loader2 className="w-4 h-4 animate-spin" />, label: "開始待ち...", color: "text-blue-500" },
-  parsing: { icon: <Loader2 className="w-4 h-4 animate-spin" />, label: "PDF解析中...", color: "text-blue-500" },
+  parsing: { icon: <Loader2 className="w-4 h-4 animate-spin" />, label: "ファイルを解析中...", color: "text-blue-500" },
   masking: { icon: <Loader2 className="w-4 h-4 animate-spin" />, label: "マスキング中...", color: "text-blue-500" },
   "fast-check": { icon: <Loader2 className="w-4 h-4 animate-spin" />, label: "NGワードチェック中...", color: "text-blue-500" },
   "deep-reason": { icon: <Loader2 className="w-4 h-4 animate-spin" />, label: "法的判定中...", color: "text-blue-500" },
