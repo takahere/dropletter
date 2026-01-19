@@ -38,6 +38,12 @@ export interface DeepReasonResult {
       suggestedFix: string
     }>
   }
+  ngWords: Array<{
+    word: string
+    law: string
+    severity: "high" | "medium" | "low"
+    reason: string
+  }>
   modifications: Array<{
     original: string
     modified: string
@@ -191,16 +197,48 @@ export async function runFastCheck(text: string): Promise<FastCheckResult> {
 // ============================================
 
 // DEEP_REASON_PROMPTテンプレート（信書ガイドラインは動的に挿入）
-// 信書判定に特化したプロンプト
-const DEEP_REASON_PROMPT_TEMPLATE = `あなたは信書判定の専門家です。以下のテキストが「信書」に該当するかどうかを、総務省の信書ガイドラインに基づいて判定してください。
-
-{fast_check_context}
+// 信書判定 + 法的NGワード検出に特化したプロンプト
+const DEEP_REASON_PROMPT_TEMPLATE = `あなたは信書判定と広告法規の専門家です。以下のテキストを分析し、2つの観点から判定してください：
+1. 「信書」に該当するかどうか（総務省の信書ガイドラインに基づく）
+2. 法的に問題のある表現（NGワード）が含まれているか
 
 ## 分析対象テキスト:
 {text}
 
 ## 信書ガイドライン:
 {shinsho_guidelines}
+
+## NGワード検出の対象法律:
+
+### 1. 景品表示法（優良誤認・有利誤認）
+- 「最安」「No.1」「業界初」「日本一」（根拠なし）
+- 「期間限定」「今だけ」（実際は常時）
+- 「通常価格○○円」（架空の比較対照価格）
+- 「お客様満足度○○%」（根拠不明確）
+
+### 2. 薬機法（医薬品医療機器等法）
+- 健康食品・化粧品での「効能」「効果」「治る」「治療」「改善」
+- 「がんに効く」「血圧を下げる」等の医薬品的効能
+- 「医師推奨」「病院で使用」（虚偽の場合）
+
+### 3. 特定商取引法
+- クーリングオフ説明の不備・誤り
+- 返品条件の不明確な記載
+- 事業者情報（住所・電話番号）の不記載
+- 「返品不可」（法定返品権がある場合）
+
+### 4. 貸金業法・利息制限法
+- 金利表示の不備（実質年率の未記載）
+- 「審査なし」「ブラックOK」等の不適切表現
+
+### 5. 著作権法・商標法
+- 他社商標の無断使用
+- キャラクターの無断利用示唆
+
+### 6. その他の広告規制
+- 「絶対」「必ず」「100%」（断定的表現）
+- 「誰でも」「簡単に」「すぐに」（誇大表現）
+- 二重価格表示の不適切な使用
 
 ## 出力形式 (JSON):
 {
@@ -209,13 +247,21 @@ const DEEP_REASON_PROMPT_TEMPLATE = `あなたは信書判定の専門家です�
     "riskLevel": "none" | "low" | "medium" | "high" | "critical",
     "issues": [
       {
-        "type": "信書関連の問題カテゴリ",
+        "type": "問題カテゴリ（信書関連/景品表示法/薬機法など）",
         "description": "問題の詳細説明",
         "location": "問題箇所の引用",
         "suggestedFix": "修正案"
       }
     ]
   },
+  "ngWords": [
+    {
+      "word": "問題のある表現",
+      "law": "該当する法律名（景品表示法/薬機法/特定商取引法など）",
+      "severity": "high" | "medium" | "low",
+      "reason": "なぜ問題なのかの説明"
+    }
+  ],
   "modifications": [
     {
       "original": "元のテキスト",
@@ -254,6 +300,12 @@ const DEEP_REASON_PROMPT_TEMPLATE = `あなたは信書判定の専門家です�
 - 小切手の類、クレジットカードの類
 - プリペイドカード
 
+## 重要な注意事項:
+- NGワードは**広告・DMに関連する法的問題のある表現のみ**を検出してください
+- 一般的な「不適切表現」や「差別表現」は対象外です
+- 文脈を考慮し、実際に法的リスクがある表現のみを報告してください
+- 問題がない場合は ngWords を空配列にしてください
+
 ## 郵便局員への説明は、以下の点に注意：
 - 専門用語を避けてわかりやすく説明する
 - **信書該当/非該当の判断理由を明確に説明する**
@@ -272,12 +324,11 @@ function sleepMs(ms: number): Promise<void> {
 
 /**
  * Run the deep-reason agent using Claude
- * Performs detailed legal judgment and generates modification suggestions
+ * Performs detailed legal judgment, NG word detection, and generates modification suggestions
  * Includes retry logic for rate limit errors (429)
  */
 export async function runDeepReason(
-  text: string,
-  fastCheckResult?: FastCheckResult
+  text: string
 ): Promise<DeepReasonResult> {
   const MAX_RETRIES = 3
   const BASE_DELAY_MS = 30000 // 30 seconds base delay for rate limits
@@ -301,18 +352,8 @@ export async function runDeepReason(
       const shinshoGuidelines = await getShinshoGuidelineForPrompt(false)
       console.log("[DeepReason] Shinsho guidelines loaded, length:", shinshoGuidelines.length)
 
-      // Build context from fast check results
-      let fastCheckContext = ""
-      if (fastCheckResult) {
-        fastCheckContext = `
-## Fast Check Results (Pre-analysis):
-${JSON.stringify(fastCheckResult.ngWords, null, 2)}
-`
-      }
-
       const prompt = DEEP_REASON_PROMPT_TEMPLATE
         .replace("{text}", truncatedText)
-        .replace("{fast_check_context}", fastCheckContext)
         .replace("{shinsho_guidelines}", shinshoGuidelines)
 
       console.log(`[DeepReason] Attempt ${attempt}/${MAX_RETRIES}, prompt length: ${prompt.length} chars`)
@@ -337,6 +378,7 @@ ${JSON.stringify(fastCheckResult.ngWords, null, 2)}
           riskLevel: parsed.legalJudgment?.riskLevel ?? "none",
           issues: parsed.legalJudgment?.issues ?? [],
         },
+        ngWords: parsed.ngWords ?? [],
         modifications: parsed.modifications ?? [],
         shinshoJudgment: parsed.shinshoJudgment,
         postalWorkerExplanation: parsed.postalWorkerExplanation ?? "解析に失敗しました。",
@@ -369,6 +411,7 @@ ${JSON.stringify(fastCheckResult.ngWords, null, 2)}
             suggestedFix: "しばらく待ってから再試行してください",
           }],
         },
+        ngWords: [],
         modifications: [],
         postalWorkerExplanation: `解析中にエラーが発生しました: ${errorMessage}`,
         summary: `エラー: ${errorMessage.substring(0, 50)}`,
@@ -383,6 +426,7 @@ ${JSON.stringify(fastCheckResult.ngWords, null, 2)}
       riskLevel: "none",
       issues: [],
     },
+    ngWords: [],
     modifications: [],
     postalWorkerExplanation: "解析に失敗しました。",
     summary: "解析に失敗しました",
@@ -1008,8 +1052,7 @@ export async function runAgent(
       }
 
       case "deep-reason": {
-        const fastCheckResult = context?.fastCheckResult as FastCheckResult | undefined
-        const result = await runDeepReason(input, fastCheckResult)
+        const result = await runDeepReason(input)
         return {
           success: true,
           output: JSON.stringify(result, null, 2),
@@ -1063,15 +1106,15 @@ export async function runAgent(
 // ============================================
 
 /**
- * Run text-based pipeline (pii-masking → fast-check → deep-reason)
+ * Run text-based pipeline (pii-masking → deep-reason)
  * Use this when you already have extracted text
+ * Note: NGワード検出はdeep-reason内で行われます
  */
 export async function runTextPipeline(
   text: string,
   onStatusChange?: (status: string) => void
 ): Promise<{
   masked: PIIMaskingResult
-  fastCheck: FastCheckResult
   deepReason: DeepReasonResult
   totalProcessingTime: number
 }> {
@@ -1081,19 +1124,14 @@ export async function runTextPipeline(
   onStatusChange?.("pii-masking")
   const masked = await runPiiMasking(text)
 
-  // Step 2: Fast Check
-  onStatusChange?.("fast-check")
-  const fastCheck = await runFastCheck(masked.maskedText)
-
-  // Step 3: Deep Reason
+  // Step 2: Deep Reason (includes NG word detection)
   onStatusChange?.("deep-reason")
-  const deepReason = await runDeepReason(masked.maskedText, fastCheck)
+  const deepReason = await runDeepReason(masked.maskedText)
 
   onStatusChange?.("complete")
 
   return {
     masked,
-    fastCheck,
     deepReason,
     totalProcessingTime: Date.now() - startTime,
   }
@@ -1102,6 +1140,7 @@ export async function runTextPipeline(
 /**
  * Run the full document processing pipeline
  * Supports both PDF files and image files (PNG, JPG, JPEG, WebP, GIF)
+ * Note: NGワード検出はdeep-reason内で行われます
  */
 export async function runDocumentPipeline(
   filePath: string,
@@ -1109,7 +1148,6 @@ export async function runDocumentPipeline(
 ): Promise<{
   parsed: VisualParseResult
   masked: PIIMaskingResult
-  fastCheck: FastCheckResult
   pdfHighlight: PdfHighlightOutput
   deepReason: DeepReasonResult
   totalProcessingTime: number
@@ -1122,7 +1160,7 @@ export async function runDocumentPipeline(
   // Step 1: Visual Parse (PDF → Markdown) or Image Vision (Image → Markdown)
   onStatusChange?.("visual-parse")
   const parsed = isImage
-    ? await runImageVision(filePath)  // Claude マルチモーダル
+    ? await runImageVision(filePath)  // Gemini Flash マルチモーダル
     : await runVisualParse(filePath)  // LlamaParse
 
   // 解析結果が空の場合はエラー
@@ -1137,9 +1175,9 @@ export async function runDocumentPipeline(
   onStatusChange?.("pii-masking")
   const masked = await runPiiMasking(parsed.markdown)
 
-  // Step 3: Fast Check
-  onStatusChange?.("fast-check")
-  const fastCheck = await runFastCheck(masked.maskedText)
+  // Step 3: Deep Reason (includes NG word detection)
+  onStatusChange?.("deep-reason")
+  const deepReason = await runDeepReason(masked.maskedText)
 
   // Step 4: PDF Highlight - NGワードとPIIの位置を特定（PDFのみ）
   let pdfHighlight: PdfHighlightOutput
@@ -1154,8 +1192,9 @@ export async function runDocumentPipeline(
     }
   } else {
     onStatusChange?.("pdf-highlight")
+    // NGワードはdeepReasonから取得
     const searchItems: PdfHighlightInput["searchItems"] = [
-      ...fastCheck.ngWords.map((ng, i) => ({
+      ...deepReason.ngWords.map((ng, i) => ({
         id: `ng-${i}`,
         type: "ng_word" as const,
         text: ng.word,
@@ -1178,16 +1217,11 @@ export async function runDocumentPipeline(
     })
   }
 
-  // Step 5: Deep Reason
-  onStatusChange?.("deep-reason")
-  const deepReason = await runDeepReason(masked.maskedText, fastCheck)
-
   onStatusChange?.("complete")
 
   return {
     parsed,
     masked,
-    fastCheck,
     pdfHighlight,
     deepReason,
     totalProcessingTime: Date.now() - startTime,

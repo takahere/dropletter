@@ -54,7 +54,7 @@ export async function POST(req: Request) {
         result: {
           pagesCount: documentResult.parsed.metadata.pageCount,
           piiDetected: documentResult.masked.statistics.totalDetected,
-          ngWordsCount: documentResult.fastCheck.ngWords.length,
+          ngWordsCount: documentResult.deepReason.ngWords.length,
           riskLevel: documentResult.deepReason.legalJudgment.riskLevel,
           isCompliant: documentResult.deepReason.legalJudgment.isCompliant,
           totalProcessingTime: documentResult.totalProcessingTime,
@@ -72,7 +72,8 @@ export async function POST(req: Request) {
             result_json: {
               parsed: documentResult.parsed,
               masked: documentResult.masked,
-              fastCheck: documentResult.fastCheck,
+              // NGワードはdeepReasonから取得
+              fastCheck: { ngWords: documentResult.deepReason.ngWords },
               deepReason: documentResult.deepReason,
               totalProcessingTime: documentResult.totalProcessingTime,
             },
@@ -135,9 +136,9 @@ ${documentResult.masked.maskedText.substring(0, 2000)}${documentResult.masked.ma
 \`\`\`
 
 ### 検出されたNGワード
-${documentResult.fastCheck.ngWords.length > 0
-  ? documentResult.fastCheck.ngWords
-      .map((w) => `- 「${w.word}」(${w.severity}): ${w.reason}`)
+${documentResult.deepReason.ngWords.length > 0
+  ? documentResult.deepReason.ngWords
+      .map((w) => `- 「${w.word}」(${w.severity}): ${w.reason}${w.law ? ` [${w.law}]` : ""}`)
       .join("\n")
   : "NGワードは検出されませんでした。"
 }
@@ -205,7 +206,8 @@ ${documentResult.deepReason.summary}`
           return {
             success: true,
             masked: result.masked,
-            fastCheck: result.fastCheck,
+            // NGワードはdeepReasonから取得
+            fastCheck: { ngWords: result.deepReason.ngWords },
             deepReason: result.deepReason,
             totalProcessingTime: result.totalProcessingTime,
           }
@@ -216,8 +218,7 @@ ${documentResult.deepReason.summary}`
         description: `PDFファイルを解析してパイプラインを実行します。
 1. PDF解析（visual-parse）
 2. 個人情報マスキング（pii-masking）
-3. NGワード高速チェック（fast-check）
-4. 法的判定（deep-reason）`,
+3. 法的判定 + NGワード検出（deep-reason）`,
         parameters: z.object({
           filePath: z.string().describe("PDFファイルの絶対パス"),
         }),
@@ -233,7 +234,8 @@ ${documentResult.deepReason.summary}`
               markdown: result.parsed.markdown.substring(0, 1000),
             },
             masked: result.masked,
-            fastCheck: result.fastCheck,
+            // NGワードはdeepReasonから取得
+            fastCheck: { ngWords: result.deepReason.ngWords },
             deepReason: result.deepReason,
             totalProcessingTime: result.totalProcessingTime,
           }

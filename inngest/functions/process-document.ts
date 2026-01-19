@@ -2,13 +2,13 @@ import { inngest } from "../client"
 import { runDocumentPipeline } from "@/lib/agents/runner"
 
 /**
- * Document Processing Function
+ * Document Processing Function (Legacy)
+ * Note: V2を使用することを推奨（process-document-v2.ts）
  *
  * 処理パイプライン:
  * 1. visual-parse: PDF解析（LlamaParse）
- * 2. pii-masking: 個人情報マスキング（Presidio）
- * 3. fast-check: NGワード高速チェック（Groq/Llama3）
- * 4. deep-reason: 法的判定（Claude）
+ * 2. pii-masking: 個人情報マスキング（Claude）
+ * 3. deep-reason: 法的判定 + NGワード検出（Claude）
  */
 export const processDocument = inngest.createFunction(
   {
@@ -37,11 +37,9 @@ export const processDocument = inngest.createFunction(
       }
     })
 
-    // Step 2: Mask PII with Presidio
+    // Step 2: Mask PII with Claude
     const masked = await step.run("pii-masking", async () => {
-      // TODO: Implement Presidio integration
-      // const result = await runPIIMasking(parsed.markdown)
-      // return result
+      // TODO: Implement Claude PII masking
       return {
         maskedText: parsed.markdown,
         detectedEntities: [],
@@ -49,19 +47,13 @@ export const processDocument = inngest.createFunction(
       }
     })
 
-    // Step 3: Fast check with Groq
-    const fastCheck = await step.run("fast-check", async () => {
-      const { runFastCheck } = await import("@/lib/agents/runner")
-      return runFastCheck(masked.maskedText)
-    })
-
-    // Step 4: Deep reason with Claude
+    // Step 3: Deep reason with Claude (includes NG word detection)
     const deepReason = await step.run("deep-reason", async () => {
       const { runDeepReason } = await import("@/lib/agents/runner")
-      return runDeepReason(masked.maskedText, fastCheck)
+      return runDeepReason(masked.maskedText)
     })
 
-    // Step 5: Store results
+    // Step 4: Store results
     const stored = await step.run("store-results", async () => {
       // TODO: Store in Supabase
       return {
@@ -79,9 +71,9 @@ export const processDocument = inngest.createFunction(
       piiMasking: {
         totalDetected: masked.statistics.totalDetected,
       },
+      // NGワードはdeepReasonから取得
       fastCheck: {
-        ngWordsCount: fastCheck.ngWords.length,
-        processingTimeMs: fastCheck.processingTimeMs,
+        ngWordsCount: deepReason.ngWords.length,
       },
       deepReason: {
         isCompliant: deepReason.legalJudgment.isCompliant,

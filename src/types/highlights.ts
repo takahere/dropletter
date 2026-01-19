@@ -43,7 +43,8 @@ export interface NGWord {
   word: string
   severity: string
   reason: string
-  position?: number
+  law?: string      // 該当する法律名（景品表示法/薬機法/特定商取引法など）
+  position?: number // 旧形式との互換性のため残す
 }
 
 export interface PIIEntity {

@@ -17,7 +17,7 @@ async function main() {
     console.log("\n--- Results ---")
     console.log("Parsed markdown length:", result.parsed.markdown.length)
     console.log("PII entities detected:", result.masked.statistics.totalDetected)
-    console.log("NG words found:", result.fastCheck.ngWords.length)
+    console.log("NG words found:", result.deepReason.ngWords.length)
     console.log("Processing time:", result.totalProcessingTime, "ms")
 
     console.log("\n--- 信書判定結果 ---")

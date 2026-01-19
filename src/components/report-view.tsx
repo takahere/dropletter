@@ -28,6 +28,7 @@ interface NGWord {
   word: string
   severity: string
   reason: string
+  law?: string // 該当する法律名（景品表示法/薬機法/特定商取引法など）
 }
 
 interface Issue {
@@ -498,9 +499,14 @@ export function ReportView({ report, editable = false }: ReportViewProps) {
                           </>
                         ) : (
                           <>
-                            <div className="flex items-center gap-2">
+                            <div className="flex items-center gap-2 flex-wrap">
                               <span className="font-medium">「{ngWord.word}」</span>
                               <RiskBadge level={ngWord.severity} />
+                              {ngWord.law && (
+                                <span className="px-2 py-0.5 text-xs rounded-full bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400">
+                                  {ngWord.law}
+                                </span>
+                              )}
                             </div>
                             <p className="text-sm text-muted-foreground">
                               {ngWord.reason}

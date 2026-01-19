@@ -207,9 +207,8 @@ export const processDocumentV2 = inngest.createFunction(
           const progressMap: Record<string, number> = {
             "visual-parse": 15,
             "pii-masking": 30,
-            "fast-check": 45,
-            "pdf-highlight": 60,
-            "deep-reason": 80,
+            "deep-reason": 60,
+            "pdf-highlight": 85,
             complete: 100,
           }
           const progress = progressMap[status] || 50
@@ -228,7 +227,6 @@ export const processDocumentV2 = inngest.createFunction(
           success: true,
           parsed: result.parsed,
           masked: result.masked,
-          fastCheck: result.fastCheck,
           pdfHighlight: result.pdfHighlight,
           deepReason: result.deepReason,
           totalProcessingTime: result.totalProcessingTime,
@@ -267,16 +265,19 @@ export const processDocumentV2 = inngest.createFunction(
         success: true
         parsed: unknown
         masked: { statistics?: { totalDetected?: number } }
-        fastCheck: { ngWords?: Array<unknown> }
         pdfHighlight: { highlights?: Array<unknown>; notFound?: string[] }
-        deepReason: { legalJudgment?: { riskLevel?: string; isCompliant?: boolean } }
+        deepReason: {
+          legalJudgment?: { riskLevel?: string; isCompliant?: boolean }
+          ngWords?: Array<unknown>
+        }
         totalProcessingTime: number
       }
 
       await completeProcessing(reportId, {
         parsed: successResult.parsed,
         masked: successResult.masked,
-        fastCheck: successResult.fastCheck,
+        // NGワードはdeepReasonから取得
+        fastCheck: { ngWords: successResult.deepReason?.ngWords || [] },
         highlights: successResult.pdfHighlight?.highlights || [],
         highlightsNotFound: successResult.pdfHighlight?.notFound || [],
         deepReason: successResult.deepReason,
@@ -300,9 +301,11 @@ export const processDocumentV2 = inngest.createFunction(
     const successResult = pipelineResult as {
       success: true
       masked: { statistics?: { totalDetected?: number } }
-      fastCheck: { ngWords?: Array<unknown> }
       pdfHighlight: { highlights?: Array<unknown>; notFound?: string[] }
-      deepReason: { legalJudgment?: { riskLevel?: string; isCompliant?: boolean } }
+      deepReason: {
+        legalJudgment?: { riskLevel?: string; isCompliant?: boolean }
+        ngWords?: Array<unknown>
+      }
     }
 
     return {
@@ -313,7 +316,8 @@ export const processDocumentV2 = inngest.createFunction(
       result: {
         riskLevel: successResult.deepReason?.legalJudgment?.riskLevel,
         isCompliant: successResult.deepReason?.legalJudgment?.isCompliant,
-        ngWordsCount: successResult.fastCheck?.ngWords?.length || 0,
+        // NGワードはdeepReasonから取得
+        ngWordsCount: successResult.deepReason?.ngWords?.length || 0,
         piiDetected: successResult.masked?.statistics?.totalDetected || 0,
         highlightsFound: successResult.pdfHighlight?.highlights?.length || 0,
         highlightsNotFound: successResult.pdfHighlight?.notFound?.length || 0,

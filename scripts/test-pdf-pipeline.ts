@@ -17,7 +17,7 @@ async function main() {
     console.log("Parsed markdown length:", result.parsed.markdown.length)
     console.log("Page count:", result.parsed.metadata.pageCount)
     console.log("PII entities detected:", result.masked.statistics.totalDetected)
-    console.log("NG words found:", result.fastCheck.ngWords.length)
+    console.log("NG words found:", result.deepReason.ngWords.length)
     console.log("PDF highlights found:", result.pdfHighlight.highlights.length)
     console.log("Processing time:", result.totalProcessingTime, "ms")
 
